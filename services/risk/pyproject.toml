@@ -1,0 +1,18 @@
+[project]
+name = "legacy-protection-risk"
+version = "0.1.0"
+description = "Risk service for Legacy Protection: rules features, anomaly model and abuse-ring sentinel"
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "hypothesis>=6", "mypy>=1.11"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.mypy]
+strict = true
+mypy_path = "src"
