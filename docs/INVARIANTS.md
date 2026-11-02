@@ -77,7 +77,7 @@ The trusted contact can never: edit the plan, add payees, receive money from the
 ### INV-09 — Plans are immutable once confirmed
 Editing a plan creates a new version. Confirmed versions are never modified. Every decision references the exact version it ran under.
 
-- **Enforced in:** `packages/db` — `plan_versions` has no UPDATE grant for the application role.
+- **Enforced in:** `packages/db/migrations/001_init.sql` — no UPDATE grant for the application role, plus a trigger that rejects updates even from the table owner.
 - **Verified by:** `INV-09 confirmed version cannot be updated`.
 
 ---
@@ -121,7 +121,7 @@ A caregiver legitimately paid by several households looks like a ring to a naive
 ### INV-15 — The audit log is append-only and tamper-evident
 Every decision, approval, state change and money action is written to `audit_events`. Each row stores the SHA-256 hash of its content plus the previous row's hash for the same plan. The application role can insert but never update or delete. A verifier recomputes the chain and reports the first broken link.
 
-- **Enforced in:** `packages/audit`; database grants in `packages/db/migrations`.
+- **Enforced in:** `packages/db/src/audit.ts` (hash chain, per-plan advisory lock), plus database triggers and grants in `packages/db/migrations/001_init.sql`.
 - **Verified by:** `INV-15 tampered row detected`; `INV-15 app role cannot update or delete`.
 
 ### INV-16 — Every decision is reproducible
