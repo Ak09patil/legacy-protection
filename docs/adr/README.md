@@ -9,3 +9,4 @@ One page per significant decision: the context, the options, the choice and its 
 | [0003](0003-hash-chained-audit-log.md) | Hash-chained Postgres audit log, not a blockchain | Accepted |
 | [0004](0004-ai-outside-the-money-path.md) | Keep the AI outside the money path | Accepted |
 | [0005](0005-abuse-ring-sentinel.md) | Abuse-ring sentinel as risk-service network features | Accepted |
+| [0006](0006-postgres-instead-of-redis.md) | Postgres instead of Redis for caching, rate limits and webhook de-duplication | Accepted |
