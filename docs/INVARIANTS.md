@@ -69,7 +69,7 @@ Any authenticated owner activity — a check-in, a login, a cancel — immediate
 - **Verified by:** `INV-07 owner activity cancels activation from every pre-execution state`.
 
 ### INV-08 — Separation of powers
-The trusted contact can never: edit the plan, add payees, receive money from the plan, see message or memo content, or activate a plan alone. The executor sees only what the estate process grants. No role can grant itself more access.
+The trusted contact can never: edit the plan, add payees, receive money from the plan, see message or memo content unless the owner explicitly allowed it (INV-17), or activate a plan alone. The executor sees only what the estate process grants. No role can grant itself more access.
 
 - **Enforced in:** `packages/policy/roles.ts` — permissions are a static table, not data stored per user.
 - **Verified by:** `INV-08 role permission matrix`; `INV-08 contact cannot be payee`.
