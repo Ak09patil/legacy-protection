@@ -23,6 +23,12 @@ importers:
 
   packages/core: {}
 
+  packages/paypal:
+    dependencies:
+      '@lp/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/policy:
     dependencies:
       '@lp/core':
