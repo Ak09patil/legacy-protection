@@ -41,7 +41,7 @@ jobs:
           python-version: "3.13"
       - run: pip install -e ".[dev]"
       - run: mypy src
-      - run: pytest -q
+      - run: PYTHONPATH=src pytest -q
 
   invariants:
     runs-on: ubuntu-latest

@@ -1,0 +1,19 @@
+{
+  "name": "@lp/executor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@lp/core": "workspace:*",
+    "@lp/db": "workspace:*",
+    "@lp/paypal": "workspace:*",
+    "@lp/policy": "workspace:*",
+    "@temporalio/activity": "^1.25.0",
+    "@temporalio/client": "^1.25.0",
+    "@temporalio/worker": "^1.25.0",
+    "@temporalio/workflow": "^1.25.0"
+  },
+  "devDependencies": {
+    "@temporalio/testing": "^1.25.0"
+  }
+}

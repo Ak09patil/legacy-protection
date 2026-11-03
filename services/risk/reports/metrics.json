@@ -1,0 +1,60 @@
+{
+  "data": "synthetic (calibration.yaml); normals are interim until DCPC data is loaded",
+  "hard_negatives": {
+    "large_payment": {
+      "false_flag": 0.2754,
+      "false_hold": 0.0273,
+      "n": 512
+    },
+    "new_payee": {
+      "false_flag": 0.0484,
+      "false_hold": 0.0012,
+      "n": 1673
+    }
+  },
+  "normal_false_flag_rate": 0.0326,
+  "normal_false_hold_rate": 0.0048,
+  "note": "Grooming payments (small trust-building payments before a scam) are excluded from headline metrics and shown per type.",
+  "per_scam_type": {
+    "family_emergency": {
+      "flagged": 0.9091,
+      "n": 44
+    },
+    "government_impostor": {
+      "flagged": 0.9524,
+      "n": 42
+    },
+    "investment": {
+      "flagged": 0.9878,
+      "n": 82
+    },
+    "investment_grooming": {
+      "flagged": 0.0,
+      "n": 50
+    },
+    "romance": {
+      "flagged": 0.6429,
+      "n": 84
+    },
+    "romance_grooming": {
+      "flagged": 0.0,
+      "n": 49
+    },
+    "tech_support": {
+      "flagged": 1.0,
+      "n": 85
+    }
+  },
+  "roc_auc": 0.9877,
+  "scam_flagged_rate": 0.8902,
+  "scam_held_rate": 0.7923,
+  "test_grooming_payments": 99,
+  "test_payments": 28466,
+  "test_scam_payments": 337,
+  "thresholds": {
+    "anomaly": 0.6689741626971525,
+    "hold": 0.13446771269018407,
+    "review": 0.01623058807606067
+  },
+  "version": "risk-lgbm-a2ea68bf996a"
+}

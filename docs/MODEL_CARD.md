@@ -1,6 +1,6 @@
 # Model Card: Legacy Protection Risk Models
 
-**Status:** data plan; metrics are filled in by `services/risk` evaluation runs (see EVALUATION.md).
+**Status:** interim model trained on calibrated synthetic data; real normal-spending data (DCPC) pending.
 
 ## Purpose
 
@@ -39,14 +39,25 @@ Publicly circulating copies of scraped Venmo transactions. Training a privacy pr
 - Network features are tested on Bitcoin transaction graphs (Elliptic), a different domain from P2P payments.
 - Metrics on synthetic positives overstate real-world performance. Reported numbers always state which data they were measured on.
 
-## Metrics (to be filled by evaluation runs)
+## Metrics
 
-| Measure | Data | Value |
-|---|---|---|
-| Recall at chosen threshold | Held-out synthetic scams | — |
-| False-hold rate | Held-out real DCPC transactions | — |
-| Text classifier F1 | Held-out real messages | — |
-| Ring detection precision / recall | Synthetic network; Elliptic | — |
+**Interim results on synthetic data** (`services/risk/reports/metrics.json`, model `risk-lgbm-a2ea68bf996a`). Normal payments are interim synthetic data until the DCPC files are loaded; these numbers will change, and synthetic data flatters any model. Measured on owners the model never saw in training.
+
+| Measure | Value |
+|---|---|
+| ROC AUC | 0.988 |
+| Scam payments flagged (review or hold) | 89.0% |
+| Scam payments held | 79.2% |
+| Normal payments wrongly held | 0.48% (target 0.5%) |
+| Normal payments sent for review | 3.26% |
+| Flagged by scam type | tech support 100%, investment 99%, government impersonation 95%, family emergency 91%, **romance 64%** |
+| Grooming payments flagged | 0%: small trust-building payments look exactly like normal payments when they happen. Excluded from training and headline figures. |
+| Legitimate new payees wrongly held | 0.12% |
+| Legitimate large payments wrongly held | 2.7% |
+
+Reproduce with `cd services/risk && PYTHONPATH=src python -m risk.train`.
+
+**What these numbers don't show:** performance on real scams. Romance scams are the hardest case, as they are in reality, because the victim pays someone they have come to trust.
 
 ## Thresholds
 

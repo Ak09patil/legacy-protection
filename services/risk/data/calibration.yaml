@@ -1,0 +1,59 @@
+# Parameters for synthetic scam payments. Every value names its source.
+# "assumption" means no public figure exists at this granularity; the value is
+# chosen to be consistent with the cited ordering or totals and is labelled as such.
+#
+# Normal (non-scam) behaviour will come from the Federal Reserve Diary of
+# Consumer Payment Choice once the data files are added (see MODEL_CARD.md).
+# Until then `normal_*` values below are interim assumptions.
+
+scam_types:
+  # Category names follow FBI IC3 and FTC Consumer Sentinel reporting.
+  # Weights: assumption, ordered by the prominence of each category in IC3 2025
+  # reporting for people over 60 (investment largest by losses; imposter scams
+  # most common by reports).
+  # amount_scale multiplies the per-payment median below (assumption).
+  # grooming: small earlier payments that make the scammer a "known" payee (assumption,
+  # reflecting how romance and investment scams build trust over weeks).
+  tech_support:        { weight: 0.24, labels: [IMPERSONATION_TECH_SUPPORT, URGENCY], method_bias: gift_card, amount_scale: 0.8, grooming: false }
+  government_impostor: { weight: 0.20, labels: [IMPERSONATION_GOVERNMENT, URGENCY],   method_bias: gift_card, amount_scale: 1.0, grooming: false }
+  family_emergency:    { weight: 0.16, labels: [IMPERSONATION_FAMILY, URGENCY],       method_bias: p2p,       amount_scale: 0.7, grooming: false }
+  romance:             { weight: 0.14, labels: [],                                     method_bias: p2p,       amount_scale: 0.35, grooming: true }
+  investment:          { weight: 0.26, labels: [CRYPTO_REQUEST],                       method_bias: crypto,    amount_scale: 1.6, grooming: true }
+
+payment_methods_70_plus:
+  # FTC Consumer Sentinel: for consumers aged 70+, gift card or reload card is the
+  # most common way of paying a scammer. Shares: assumption consistent with that ordering.
+  gift_card: 0.34
+  p2p: 0.30
+  crypto: 0.16
+  bank_transfer: 0.20
+
+scam_amount_usd:
+  # FBI IC3 2025: average reported loss for people 60+ was about $38,500 per
+  # victim, usually spread over several payments. Per-payment log-normal: assumption.
+  per_payment_median: 900
+  per_payment_sigma: 1.1
+  payments_per_victim: [1, 6]   # assumption: scams often extract repeated payments
+
+scam_timing:
+  # FTC: phone calls are the most common contact method for victims 70+, so
+  # payments cluster in daytime hours. Assumption: 9:00-18:00 local, 85%.
+  daytime_share: 0.85
+
+normal_interim:
+  # Interim until DCPC data is loaded. Assumption.
+  payees_per_owner: [4, 12]
+  payments_per_month: [6, 20]
+  amount_median_usd: 85
+  amount_sigma: 0.9
+  legit_new_payee_share: 0.06       # plumbers, doctors' offices, one-off purchases
+  legit_large_payment_share: 0.02   # car repair, medical bills
+  # Legitimate use of methods and words scammers also use (assumption):
+  # people buy gift cards as presents and some hold small crypto amounts.
+  methods: { p2p: 0.76, bank_transfer: 0.14, gift_card: 0.07, crypto: 0.03 }
+  note_label_rates: { URGENCY: 0.03, GIFT_CARD_REQUEST: 0.01 }
+
+sources:
+  fbi_ic3_2025: "FBI Internet Crime Complaint Center, 2025 Internet Crime Report (released April 2026)"
+  ftc_sentinel: "FTC Consumer Sentinel Network, interactive data by age, payment and contact method"
+  dcpc: "Federal Reserve Bank of Atlanta, Diary of Consumer Payment Choice 2022-2024 public use data"
