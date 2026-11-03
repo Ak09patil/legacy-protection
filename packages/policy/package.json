@@ -12,6 +12,7 @@
     }
   },
   "dependencies": {
-    "@lp/core": "workspace:*"
+    "@lp/core": "workspace:*",
+    "zod": "^3.25.76"
   }
 }

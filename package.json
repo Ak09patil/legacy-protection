@@ -5,7 +5,7 @@
   "engines": { "node": ">=22" },
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc -b packages/core packages/policy packages/paypal packages/db"
+    "typecheck": "tsc -b packages/core packages/policy packages/paypal packages/db packages/ai"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
