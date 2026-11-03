@@ -1,6 +1,6 @@
 # ADR-0001: Temporal for the plan lifecycle
 
-- **Status:** Accepted, conditional on a one-day spike (see Consequences)
+- **Status:** Accepted. Spike passed on 2026-11-03 (see Spike result)
 - **Date:** 2026-11-02
 
 ## Context
@@ -29,3 +29,15 @@ The lifecycle's rules live in a pure state machine (`packages/core/lifecycle.ts`
 - Workflow history doubles as an operational record alongside the audit log.
 - Workflow code must be deterministic. Non-deterministic work (I/O, time, randomness) lives in activities.
 - **Spike rule:** on Day 1 we get one plan running end to end on Temporal (Temporal Cloud or self-hosted on Render). If it isn't working by the end of that day, we switch to option 1 using the same `lifecycle.ts`, and record that in ADR-0006.
+
+## Spike result (2026-11-03)
+
+The lifecycle runs on Temporal's time-skipping test server (`workers/executor/test/workflow.test.ts`):
+
+- full path: missed check-ins with two reminders, passkey-confirmed contact, 72-hour wait, activation, execution of every planned step;
+- owner activity a day into the waiting period cancels activation; nothing executes in the following ten days (INV-07);
+- a contact confirmation without a passkey changes nothing (INV-06);
+- a payment that fails twice after PayPal acted is retried with the same key and has exactly one effect (INV-03);
+- the worker is shut down between two scheduled payouts and a fresh worker with no cached state finishes the plan by replaying history, with each step taking effect exactly once (INV-03).
+
+The database-plus-cron fallback is not needed.

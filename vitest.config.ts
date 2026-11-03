@@ -6,13 +6,14 @@ const src = (p: string) => fileURLToPath(new URL(`./packages/${p}/src/index.ts`,
 export default defineConfig({
   resolve: {
     // Tests always run against source, never stale build output.
-    alias: {
-      "@lp/core": src("core"),
-      "@lp/policy": src("policy"),
-      "@lp/paypal": src("paypal"),
-      "@lp/db": src("db"),
-      "@lp/ai": src("ai"),
-    },
+    alias: [
+      { find: /^@lp\/core\/lifecycle$/, replacement: fileURLToPath(new URL("./packages/core/src/lifecycle.ts", import.meta.url)) },
+      { find: /^@lp\/core$/, replacement: src("core") },
+      { find: /^@lp\/policy$/, replacement: src("policy") },
+      { find: /^@lp\/paypal$/, replacement: src("paypal") },
+      { find: /^@lp\/db$/, replacement: src("db") },
+      { find: /^@lp\/ai$/, replacement: src("ai") },
+    ],
   },
-  test: { include: ["packages/*/test/**/*.test.ts"] },
+  test: { include: ["packages/*/test/**/*.test.ts", "workers/*/test/**/*.test.ts"], testTimeout: 30_000 },
 });
