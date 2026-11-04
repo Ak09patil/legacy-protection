@@ -87,11 +87,13 @@ try {
       items: [{ name: "Quilting class (sandbox check)", quantity: "1", unit_amount: { currency_code: "USD", value: "80.00" } }],
     },
   });
-  invoiceId = inv.id ?? inv.href?.split("/").pop() ?? "";
-  await client.request({ method: "POST", path: `/v2/invoicing/invoices/${invoiceId}/send`, idempotencyKey: `lp-smoke-${randomUUID()}`, body: { send_to_invoicer: false } });
+  const draftId = inv.id ?? inv.href?.split("/").pop() ?? "";
+  await client.request({ method: "POST", path: `/v2/invoicing/invoices/${draftId}/send`, idempotencyKey: `lp-smoke-${randomUUID()}`, body: { send_to_invoicer: false } });
+  invoiceId = draftId; // only a sent invoice can be cancelled
   ok(`invoice ${invoiceId} created and sent`);
 } catch (e) {
   no(`could not create and send an invoice: ${why(e)}`);
+  if (e instanceof PayPalError && e.issue === "INR_FOREIGN_CURRENCY_BLOCKED") console.log("    This sandbox account is registered in India, which can't invoice in USD. Use a US sandbox business account.");
   failures++;
 }
 
@@ -187,6 +189,7 @@ if (pay.allow && pay.kind === "write" && pay.step.type === "PAY_OBLIGATION") {
     }
   } catch (e) {
     no(`payout to Maria: ${why(e)}`);
+    if (e instanceof PayPalError && e.issue === "PAYOUT_NOT_AVAILABLE") console.log("    Payouts aren't available on this sandbox account's country. Use a US sandbox business account.");
     failures++;
   }
 }
