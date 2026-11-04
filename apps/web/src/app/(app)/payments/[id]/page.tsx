@@ -1,14 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Heading, Panel, buttonStyles, money } from "@/components/app/ui";
-import { payment, world } from "@/server/world";
+import { getPayment } from "@/server/payments";
+import { requireRole, snapshot } from "@/server/plans";
 import { paymentAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
 
 function Action({ id, action, label, variant }: { id: string; action: string; label: string; variant: keyof typeof buttonStyles }) {
   return (
-    <form action={paymentAction} className="mx-auto max-w-[34rem]">
+    <form action={paymentAction}>
       <input type="hidden" name="id" value={id} />
       <input type="hidden" name="action" value={action} />
       <button type="submit" className={buttonStyles[variant]}>
@@ -18,24 +19,35 @@ function Action({ id, action, label, variant }: { id: string; action: string; la
   );
 }
 
-const fmt = (ms: number) =>
-  new Intl.DateTimeFormat("en-US", { weekday: "long", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" }).format(ms);
+const HISTORY: Record<string, string> = {
+  PAYMENT_DECIDED: "Checked before any money moved.",
+  PAYMENT_STOP: "You chose not to send it. No money left your account.",
+  PAYMENT_ASK_CONTACT: "You asked to talk it over with your trusted contact.",
+  PAYMENT_SEND_ANYWAY: "You chose to send it. It waits 24 hours first.",
+  PAYMENT_CANCEL_RELEASE: "You changed your mind. It won’t be sent.",
+  PAYMENT_RELEASED: "Sent.",
+};
 
 export default async function PaymentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const p = payment(id);
+  const ctx = await requireRole("OWNER");
+  const p = await getPayment(ctx, id);
   if (!p) notFound();
-  const contact = world().plan.trustedContact.name;
+  const s = await snapshot(ctx.planId);
+  const contact = s.contact.status === "JOINED" ? s.contact.name : null;
+  const tz = s.confirmed?.document.checkin.timeZone ?? "UTC";
+  const fmt = (ms: number) => new Intl.DateTimeFormat("en-US", { weekday: "long", hour: "numeric", minute: "2-digit", timeZone: tz }).format(ms);
+  const payeeIsNew = p.decision?.reasons.some((r) => r.code.startsWith("NEW_PAYEE")) ?? false;
   const open = p.status === "PAUSED" || p.status === "WAITING_FOR_CONTACT";
-  const reasons = p.decision.reasons.filter((r, i, all) => all.findIndex((x) => x.text === r.text) === i).slice(0, 3);
+  const reasons = (p.decision?.reasons ?? []).filter((r, i, all) => all.findIndex((x) => x.text === r.text) === i).slice(0, 3);
 
   return (
-    <div className="space-y-5 pt-2">
+    <div className="mx-auto max-w-[34rem] space-y-5 pt-2">
       <Link href="/home" className="inline-block text-[16px] font-semibold text-green">
         Back home
       </Link>
 
-      {p.decision.level === "PASS" ? (
+      {p.decision?.level === "PASS" ? (
         <div>
           <Heading className="text-[clamp(1.9rem,6vw,2.4rem)]">This payment looked normal</Heading>
           <p className="mt-2 text-[17px] text-ink-soft">We checked it and sent it straight away.</p>
@@ -61,7 +73,7 @@ export default async function PaymentPage({ params }: { params: Promise<{ id: st
         <p className="mt-1 text-[2.4rem] font-semibold leading-none tracking-[-0.02em]">{money(p.amountMinor)}</p>
         <p className="mt-2 text-[17px]">
           to {p.payeeName}
-          {p.payeeIsNew && <span className="text-ink-soft">, someone you haven’t paid before</span>}
+          {payeeIsNew && <span className="text-ink-soft">, someone you haven’t paid before</span>}
         </p>
         {p.note && (
           <p className="mt-4 rounded-2xl bg-mist px-4 py-3 text-[16px] italic text-ink-soft">Their note: “{p.note}”</p>
@@ -87,9 +99,9 @@ export default async function PaymentPage({ params }: { params: Promise<{ id: st
       {open && (
         <div className="space-y-3">
           <Action id={p.id} action="stop" label="Don’t send it" variant="primary" />
-          {p.status === "PAUSED" && <Action id={p.id} action="ask-contact" label={`Talk it over with ${contact}`} variant="soft" />}
+          {p.status === "PAUSED" && contact && <Action id={p.id} action="ask-contact" label={`Talk it over with ${contact}`} variant="soft" />}
           {p.status === "WAITING_FOR_CONTACT" && (
-            <p className="text-center text-[16px] text-ink-soft">We’ve let {contact} know. She’ll be in touch.</p>
+            <p className="text-center text-[16px] text-ink-soft">We’ve let {contact} know. They’ll be in touch.</p>
           )}
           <form action={paymentAction} className="pt-2 text-center">
             <input type="hidden" name="id" value={p.id} />
@@ -98,7 +110,7 @@ export default async function PaymentPage({ params }: { params: Promise<{ id: st
               Send anyway
             </button>
             <p className="mx-auto mt-2 max-w-[24rem] text-[14px] leading-[1.5] text-ink-soft">
-              If you choose this, we’ll wait 24 hours first and let {contact} know. People who pressure you to pay
+              If you choose this, we’ll wait 24 hours first{contact ? ` and let ${contact} know` : ""}. People who pressure you to pay
               fast are often scammers.
             </p>
           </form>
@@ -117,7 +129,7 @@ export default async function PaymentPage({ params }: { params: Promise<{ id: st
         <ol className="mt-2 space-y-2 text-[15px] text-ink-soft">
           {p.history.map((h, i) => (
             <li key={i}>
-              <span className="text-ink">{fmt(h.at)}</span>: {h.text}
+              <span className="text-ink">{fmt(h.at)}</span>: {HISTORY[h.kind] ?? h.kind}
             </li>
           ))}
         </ol>

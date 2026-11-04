@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState, useTransition } from "react";
+import { useEffect, useId, useState, useTransition } from "react";
 import type { PlanDocument } from "@lp/policy";
 import { Heading, Panel, buttonStyles } from "@/components/app/ui";
 import { confirmPlanAction, draftFromWordsAction, previewPlanAction } from "../../actions";
@@ -27,8 +27,13 @@ function Field({ label: text, hint, children }: { label: string; hint?: string; 
 const dollars = (minor: number) => String(minor / 100);
 const toMinor = (s: string) => Math.round(Number(s.replace(/[^0-9.]/g, "")) * 100) || 0;
 
-export function PlanEditor({ initial }: { initial: PlanDocument }) {
+export function PlanEditor({ initial, detectTimeZone = false }: { initial: PlanDocument; detectTimeZone?: boolean }) {
   const [plan, setPlan] = useState<PlanDocument>(initial);
+  useEffect(() => {
+    if (!detectTimeZone) return;
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (tz) setPlan((p) => ({ ...p, checkin: { ...p.checkin, timeZone: tz } }));
+  }, [detectTimeZone]);
   const [words, setWords] = useState("");
   const [summary, setSummary] = useState<string[] | null>(null);
   const [issues, setIssues] = useState<string[]>([]);
@@ -147,6 +152,7 @@ export function PlanEditor({ initial }: { initial: PlanDocument }) {
             />
           )}
         </Field>
+        <p className="-mt-2 text-[14px] text-ink-soft">Times are in {plan.checkin.timeZone.replaceAll("_", " ")}.</p>
         <Field label="If you miss check-ins and your contact confirms, how long should we wait before acting?" hint="Any sign of you during this time stops everything.">
           {(id) => (
             <select id={id} className={field} value={plan.waitingPeriodHours} onChange={(e) => edit((p) => ((p.waitingPeriodHours = Number(e.target.value)), p))}>

@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { Heading, Panel, money } from "@/components/app/ui";
-import { auditTrail, story, verifyAudit } from "@/server/world";
+import { notFound } from "next/navigation";
+import { currentUser } from "@/server/auth";
+import { db } from "@/server/db";
 import { RingMap } from "./RingMap";
 
 export const dynamic = "force-dynamic";
@@ -46,15 +48,16 @@ const LEVEL = {
   HOLD: { text: "Held", cls: "bg-[#FCEFD9] text-amber-ink" },
 } as const;
 
-export default function OpsPage() {
+/** PayPal staff only. Allowed emails come from OPS_EMAILS; anyone else gets a 404, not a hint. */
+export default async function OpsPage() {
+  const user = await currentUser();
+  const allowed = (process.env.OPS_EMAILS ?? "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+  if (!user || !allowed.includes(user.email.toLowerCase())) notFound();
   const m = loadMetrics();
-  const s = story();
-  const chain = verifyAudit();
-  const trail = [...auditTrail()].reverse();
-  const tz = s.timeZone;
-  const time = (ms: number) =>
-    new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: tz }).format(ms);
-
+  const decisions = await db().query<{ payee_name: string; amount_minor: string; level: "PASS" | "REVIEW" | "HOLD"; reasons: Array<{ code: string; source: string }>; policy_version: string; model_status: string; decided_at: Date }>(
+    `SELECT p.payee_name, p.amount_minor, d.level, d.reasons, d.policy_version, d.model_status, d.decided_at
+       FROM payment_decisions d JOIN payments p ON p.id = d.payment_id ORDER BY d.decided_at DESC LIMIT 20`,
+  );
   const types = m
     ? Object.entries(m.per_scam_type)
         .filter(([k]) => !k.endsWith("_grooming"))
@@ -133,65 +136,33 @@ export default function OpsPage() {
             Recent decisions
           </h2>
           <ul className="mt-3 divide-y divide-ink/8">
-            {s.payments.map((p) => (
-              <li key={p.id} className="py-3">
+            {decisions.rows.length === 0 && <li className="py-3 text-[15px] text-ink-soft">No decisions yet.</li>}
+            {decisions.rows.map((p, i) => (
+              <li key={i} className="py-3">
                 <div className="flex items-baseline justify-between gap-2 text-[15px]">
                   <span>
-                    {p.payeeName} <span className="text-ink-soft">{money(p.amountMinor)}</span>
+                    {p.payee_name} <span className="text-ink-soft">{money(Number(p.amount_minor))}</span>
                   </span>
-                  <span className={`rounded-full px-2.5 py-0.5 text-[13px] font-semibold ${LEVEL[p.decision.level].cls}`}>{LEVEL[p.decision.level].text}</span>
+                  <span className={`rounded-full px-2.5 py-0.5 text-[13px] font-semibold ${LEVEL[p.level].cls}`}>{LEVEL[p.level].text}</span>
                 </div>
-                {p.decision.reasons.length > 0 && (
+                {p.reasons.length > 0 && (
                   <ul className="mt-1.5 space-y-1 text-[13px] text-ink-soft">
-                    {p.decision.reasons.map((r) => (
+                    {p.reasons.map((r) => (
                       <li key={r.code + r.source}>
                         <span className="font-mono">{r.code}</span> · {r.source === "MODEL" ? "model" : "rule"}
                       </li>
                     ))}
                   </ul>
                 )}
-                <p className="mt-1 font-mono text-[12px] text-ink-soft">{p.decision.policyVersion}</p>
+                <p className="mt-1 font-mono text-[12px] text-ink-soft">
+                  {p.policy_version} · model {p.model_status.toLowerCase()}
+                </p>
               </li>
             ))}
           </ul>
         </Panel>
       </div>
 
-      <Panel aria-labelledby="audit-h">
-        <div className="flex flex-wrap items-baseline justify-between gap-3">
-          <h2 id="audit-h" className="text-[17px] font-semibold">
-            Sealed record
-          </h2>
-          <span className={`rounded-full px-3 py-1 text-[13px] font-semibold ${chain.ok ? "bg-sage text-green" : "bg-[#FCEFD9] text-amber-ink"}`}>
-            {chain.ok ? `Chain intact · ${chain.length} entries` : `Chain broken at ${chain.brokenAt}`}
-          </span>
-        </div>
-        <p className="mt-1 text-[15px] text-ink-soft">Append-only. Each entry carries the seal of the one before, so nothing can be quietly edited or removed.</p>
-        <div className="mt-4 max-h-[26rem] overflow-auto">
-          <table className="w-full min-w-[40rem] text-left text-[14px]">
-            <thead className="sticky top-0 bg-white/95 text-[12px] text-ink-soft">
-              <tr>
-                <th className="py-2 pr-3 font-semibold">#</th>
-                <th className="py-2 pr-3 font-semibold">When</th>
-                <th className="py-2 pr-3 font-semibold">Who</th>
-                <th className="py-2 pr-3 font-semibold">What happened</th>
-                <th className="py-2 font-semibold">Seal</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-ink/8">
-              {trail.map((e) => (
-                <tr key={e.seq} className="align-top">
-                  <td className="py-2 pr-3 tabular-nums text-ink-soft">{e.seq}</td>
-                  <td className="whitespace-nowrap py-2 pr-3 text-ink-soft">{time(e.at)}</td>
-                  <td className="whitespace-nowrap py-2 pr-3">{e.actor}</td>
-                  <td className="py-2 pr-3">{e.text}</td>
-                  <td className="py-2 font-mono text-[12px] text-ink-soft">{e.hash.slice(0, 10)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Panel>
     </div>
   );
 }
