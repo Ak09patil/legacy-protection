@@ -1,0 +1,81 @@
+@import "tailwindcss";
+
+@theme {
+  --color-mist: #F1F6F2;
+  --color-ink: #10241B;
+  --color-ink-soft: #3E5248;
+  --color-green: #2E5E45;
+  --color-green-2: #3F7A5B;
+  --color-sage: #D3F4D1;
+  --color-mint: #ACDBB8;
+  --color-seaglass: #BFE3E0;
+  --color-warm: #FFF6E6;
+  --color-amber: #E9A94A;
+  --color-amber-ink: #6B3F06;
+
+  --font-display: "Fraunces Variable", Georgia, serif;
+  --font-body: "Manrope Variable", system-ui, sans-serif;
+
+  --ease-calm: cubic-bezier(0.22, 0.8, 0.24, 1);
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--color-mist);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: 18px;
+  line-height: 1.6;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--color-mint);
+  color: var(--color-ink);
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-green);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* Drifting colour fields behind the WebGL layer (cheap, and the fallback when motion is reduced). */
+.aura-field {
+  position: fixed;
+  inset: -20vmax;
+  z-index: 0;
+  pointer-events: none;
+  filter: blur(70px);
+}
+.aura-field span {
+  position: absolute;
+  border-radius: 50%;
+  opacity: 0.7;
+}
+.aura-field .f1 { width: 70vmax; height: 55vmax; left: -5vmax; top: 0; background: #CFEFD3; animation: drift-1 30s ease-in-out infinite alternate; }
+.aura-field .f2 { width: 60vmax; height: 60vmax; right: -10vmax; top: 8vmax; background: #BFE3E0; animation: drift-2 36s ease-in-out infinite alternate; }
+.aura-field .f3 { width: 55vmax; height: 45vmax; left: 30vmax; bottom: -5vmax; background: #FFF1DC; animation: drift-3 32s ease-in-out infinite alternate; }
+
+@keyframes drift-1 { to { transform: translate(8vmax, 6vmax) rotate(12deg) scale(1.08); } }
+@keyframes drift-2 { to { transform: translate(-10vmax, 4vmax) rotate(-10deg) scale(0.95); } }
+@keyframes drift-3 { to { transform: translate(-6vmax, -8vmax) scale(1.1); } }
+
+/* Static rings shown instead of WebGL when motion is reduced or WebGL is unavailable. */
+.static-rings {
+  background:
+    radial-gradient(circle, #FFFFFF 0 6%, #FFF6E6 10%, transparent 13%),
+    radial-gradient(circle, transparent 0 20%, rgba(172, 219, 184, 0.75) 22% 25%, transparent 27%),
+    radial-gradient(circle, transparent 0 34%, rgba(191, 227, 224, 0.7) 36% 38%, transparent 40%),
+    radial-gradient(circle, transparent 0 47%, rgba(211, 244, 209, 0.8) 49% 51%, transparent 53%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .aura-field span { animation: none; }
+}
