@@ -160,6 +160,12 @@ Logs carry IDs and trace IDs, never credentials, tokens, full names, emails or m
 - **Enforced in:** the shared logger's redaction list; secret scanning in CI.
 - **Verified by:** `INV-21 logger redacts sensitive fields`.
 
+### INV-22 — No one can sign in with what's in the database
+There are no passwords. People sign in with passkeys only. Session and invite tokens are stored as SHA-256 hashes, so a copy of the database cannot be used to sign in or accept an invite. A person's role on a plan comes only from a membership created through the owner's invite, never from the request.
+
+- **Enforced in:** `packages/db/migrations/002_accounts.sql` (schema), `apps/web/src/server/auth.ts`.
+- **Verified by:** `INV-22 only token hashes are stored`, `INV-22 a plan has at most one active trusted contact`.
+
 ---
 
 ## Change log
@@ -167,3 +173,4 @@ Logs carry IDs and trace IDs, never credentials, tokens, full names, emails or m
 | Date | Change | ADR |
 |---|---|---|
 | 2026-11-02 | Initial set INV-01 to INV-21 | ADR-0001 to ADR-0005 |
+| 2026-11-04 | Added INV-22 (accounts and sign-in) | — |

@@ -30,7 +30,9 @@ function urlFor(db: string, user?: string): string {
 
 async function newPlan(): Promise<string> {
   const id = randomUUID();
-  await app.query(`INSERT INTO plans (id, owner_id) VALUES ($1, 'owner-1')`, [id]);
+  const ownerId = randomUUID(); // one plan per owner
+  await app.query(`INSERT INTO users (id, email, display_name) VALUES ($1, $2, 'Test owner')`, [ownerId, `${ownerId}@example.com`]);
+  await app.query(`INSERT INTO plans (id, owner_id) VALUES ($1, $2)`, [id, ownerId]);
   return id;
 }
 
@@ -203,6 +205,88 @@ suite("database", () => {
           [randomUUID(), plan],
         ),
       ).rejects.toThrow(/duplicate key/);
+    });
+  });
+
+  describe("accounts", () => {
+    const user = async () => {
+      const id = randomUUID();
+      await app.query(`INSERT INTO users (id, email, display_name) VALUES ($1, $2, 'Someone')`, [id, `${id}@Example.com`]);
+      return id;
+    };
+
+    it("INV-22 only token hashes are stored", async () => {
+      const cols = await owner.query<{ table_name: string; column_name: string }>(
+        `SELECT table_name, column_name FROM information_schema.columns
+          WHERE table_name IN ('sessions', 'invites', 'users') AND column_name ~ '(token|password|secret)'`,
+      );
+      for (const c of cols.rows) expect(c.column_name).toBe("token_hash");
+      expect(cols.rows.length).toBeGreaterThan(0);
+    });
+
+    it("INV-22 email addresses are unique regardless of case", async () => {
+      const id = await user();
+      await expect(
+        app.query(`INSERT INTO users (id, email, display_name) VALUES ($1, $2, 'Copy')`, [randomUUID(), `${id}@EXAMPLE.COM`]),
+      ).rejects.toThrow(/duplicate key/);
+    });
+
+    it("INV-22 a plan has at most one active trusted contact", async () => {
+      const plan = await newPlan();
+      const [a, b] = [await user(), await user()];
+      await app.query(`INSERT INTO memberships (plan_id, user_id, role) VALUES ($1, $2, 'TRUSTED_CONTACT')`, [plan, a]);
+      await expect(
+        app.query(`INSERT INTO memberships (plan_id, user_id, role) VALUES ($1, $2, 'TRUSTED_CONTACT')`, [plan, b]),
+      ).rejects.toThrow(/duplicate key/);
+      await app.query(`UPDATE memberships SET revoked_at = now() WHERE plan_id = $1 AND user_id = $2`, [plan, a]);
+      await app.query(`INSERT INTO memberships (plan_id, user_id, role) VALUES ($1, $2, 'TRUSTED_CONTACT')`, [plan, b]);
+    });
+
+    it("INV-22 the app role cannot delete people", async () => {
+      const id = await user();
+      await expect(app.query(`DELETE FROM users WHERE id = $1`, [id])).rejects.toThrow(/permission denied/);
+    });
+  });
+
+  describe("product state", () => {
+    it("INV-06 the database refuses a waiting period under 72 hours", async () => {
+      const plan = await newPlan();
+      await expect(
+        app.query(`INSERT INTO plan_state (plan_id, phase, waiting_period_ms) VALUES ($1, 'MONITORING', $2)`, [plan, 71 * 3_600_000]),
+      ).rejects.toThrow(/check constraint/);
+    });
+
+    it("INV-16 a recorded decision can never be changed", async () => {
+      const plan = await newPlan();
+      const pay = randomUUID();
+      await app.query(
+        `INSERT INTO payments (id, plan_id, payee_name, payee_email, amount_minor, currency, method, status)
+         VALUES ($1, $2, 'X', 'x@example.com', 100, 'USD', 'p2p', 'PAUSED')`,
+        [pay, plan],
+      );
+      await app.query(
+        `INSERT INTO payment_decisions (payment_id, level, reasons, policy_version, model_status) VALUES ($1, 'HOLD', '[]', 'p', 'OK')`,
+        [pay],
+      );
+      await expect(app.query(`UPDATE payment_decisions SET level = 'PASS' WHERE payment_id = $1`, [pay])).rejects.toThrow();
+      await expect(owner.query(`DELETE FROM payment_decisions WHERE payment_id = $1`, [pay])).rejects.toThrow(/append-only/);
+    });
+
+    it("INV-03 one PayPal request ID can belong to only one executor step", async () => {
+      const plan = await newPlan();
+      const ver = randomUUID();
+      await app.query(
+        `INSERT INTO plan_versions (id, plan_id, version, document, confirmed_at, confirmed_by) VALUES ($1, $2, 1, '{}', now(), 'o')`,
+        [ver, plan],
+      );
+      const ins = (id: string) =>
+        app.query(
+          `INSERT INTO execution_steps (id, plan_id, plan_version_id, step, label, due_at, status, paypal_request_id)
+           VALUES ($1, $2, $3, '{}', 'l', now(), 'SCHEDULED', 'lp-same')`,
+          [id, plan, ver],
+        );
+      await ins("a");
+      await expect(ins("b")).rejects.toThrow(/duplicate key/);
     });
   });
 
