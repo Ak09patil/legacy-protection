@@ -23,12 +23,8 @@ envVarGroups:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: TEMPORAL_ADDRESS
-        value: lp-temporal:7233
-      - key: VAULT_URL
-        value: http://lp-vault:8787
-      - key: RISK_URL
-        value: http://lp-risk:8765
+      - key: NODE_VERSION
+        value: "22"
       - key: PAYPAL_CLIENT_ID
         sync: false
       - key: PAYPAL_CLIENT_SECRET
@@ -50,6 +46,12 @@ services:
     healthCheckPath: /api/health
     envVars:
       - fromGroup: lp-shared
+      - key: TEMPORAL_ADDRESS
+        fromService: { name: lp-temporal, type: pserv, property: hostport }
+      - key: VAULT_HOSTPORT
+        fromService: { name: lp-vault, type: pserv, property: hostport }
+      - key: RISK_HOSTPORT
+        fromService: { name: lp-risk, type: pserv, property: hostport }
       - key: DATABASE_OWNER_URL
         fromDatabase: { name: lp-main, property: connectionString }
       - key: APP_ORIGIN
@@ -76,6 +78,10 @@ services:
     startCommand: pnpm worker
     envVars:
       - fromGroup: lp-shared
+      - key: TEMPORAL_ADDRESS
+        fromService: { name: lp-temporal, type: pserv, property: hostport }
+      - key: VAULT_HOSTPORT
+        fromService: { name: lp-vault, type: pserv, property: hostport }
       - key: DATABASE_OWNER_URL # used only for its host; the worker connects as lp_app
         fromDatabase: { name: lp-main, property: connectionString }
       - key: VAULT_SECRET_WORKER
@@ -91,6 +97,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: NODE_VERSION
+        value: "22"
       - key: VAULT_PORT
         value: "8787"
       - key: VAULT_DATABASE_URL
@@ -110,6 +118,9 @@ services:
     rootDir: services/risk
     buildCommand: pip install -e . && python -m risk.train
     startCommand: PYTHONPATH=src uvicorn risk.api:app --host 0.0.0.0 --port 8765
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
 
   # ------------------------------------------- private: Temporal (dev server)
   # For the hackathon: Temporal's single-binary server with its state on a disk.

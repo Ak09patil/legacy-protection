@@ -8,7 +8,7 @@ const g = globalThis as unknown as { __lpVault?: Vault };
 
 export function webVault(): Vault {
   if (!g.__lpVault) {
-    const url = process.env.VAULT_URL;
+    const url = process.env.VAULT_URL ?? (process.env.VAULT_HOSTPORT ? `http://${process.env.VAULT_HOSTPORT}` : undefined);
     const secret = process.env.VAULT_SECRET_WEB;
     g.__lpVault = url && secret ? httpVault(url, "web", secret) : unsealedDevVault();
   }

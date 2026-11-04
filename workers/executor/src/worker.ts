@@ -18,7 +18,8 @@ async function main() {
   pool.on("error", (e) => console.error(`[db] idle connection lost: ${e.message}`));
   const executor = executorFromEnv();
   // The worker's own vault identity: it may open plan documents to run a plan, never payment notes (INV-24).
-  if (process.env.VAULT_URL && process.env.VAULT_SECRET_WORKER) configureVault(httpVault(process.env.VAULT_URL, "worker", process.env.VAULT_SECRET_WORKER));
+  const vaultUrl = process.env.VAULT_URL ?? (process.env.VAULT_HOSTPORT ? `http://${process.env.VAULT_HOSTPORT}` : undefined);
+  if (vaultUrl && process.env.VAULT_SECRET_WORKER) configureVault(httpVault(vaultUrl, "worker", process.env.VAULT_SECRET_WORKER));
   else if (process.env.NODE_ENV === "production") throw new Error("VAULT_URL and VAULT_SECRET_WORKER must be set in production");
   const connection = await NativeConnection.connect({
     address: process.env.TEMPORAL_ADDRESS ?? "localhost:7233",

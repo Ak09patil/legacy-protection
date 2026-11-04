@@ -10,7 +10,7 @@ Everything is defined in `render.yaml` (a Render Blueprint). Only the web app is
 
 | Secret | Where it goes | How to make it |
 |---|---|---|
-| `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` | env group `lp-shared` | Sandbox app on developer.paypal.com |
+| `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` | env group `lp-shared` | Sandbox app on developer.paypal.com (the US one) |
 | `VAULT_MASTER_KEY` | `lp-vault` | `openssl rand -hex 32` |
 | `VAULT_SECRET_WEB` | `lp-vault` **and** `lp-web` (same value) | `openssl rand -hex 32` |
 | `VAULT_SECRET_WORKER` | `lp-vault` **and** `lp-worker` (same value) | `openssl rand -hex 32` |

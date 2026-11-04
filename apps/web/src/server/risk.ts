@@ -27,7 +27,8 @@ export interface ScoreInput {
 }
 
 async function post(path: string, body: unknown): Promise<ModelSignal> {
-  const base = process.env.RISK_URL;
+  // Render's private network gives host:port; local development gives a full URL.
+  const base = process.env.RISK_URL ?? (process.env.RISK_HOSTPORT ? `http://${process.env.RISK_HOSTPORT}` : undefined);
   if (!base) throw new Error("RISK_URL is not set");
   const res = await fetch(`${base}${path}`, {
     method: "POST",
