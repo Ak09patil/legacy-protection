@@ -8,7 +8,8 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -b packages/core packages/policy packages/paypal packages/db packages/ai workers/executor",
-    "dev": "pnpm --filter @lp/web dev"
+    "dev": "pnpm --filter @lp/web dev",
+    "check:paypal": "node --env-file=.env scripts/check-paypal.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
