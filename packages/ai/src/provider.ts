@@ -52,18 +52,23 @@ async function post(fetchImpl: FetchLike, url: string, headers: Record<string, s
     return await res.json();
   } catch (e) {
     if (e instanceof ProviderError) throw e;
+    // Log the transport error only (never prompts or bodies). INV-21
+    console.error(`[ai] model provider unreachable: ${e instanceof Error ? `${e.name}: ${e.message}${e.cause instanceof Error ? ` (${e.cause.message})` : ""}` : "unknown"}`);
     throw new ProviderError("Model provider unreachable", null);
   } finally {
     clearTimeout(timer);
   }
 }
 
-export class AnthropicProvider implements LlmProvider {
+import type { ChatProvider, ChatRequest, ChatResult, ContentBlock } from "./agent.js";
+
+export class AnthropicProvider implements ChatProvider {
   readonly name = "anthropic";
   constructor(
     private readonly apiKey: string,
     readonly model: string,
     private readonly fetchImpl: FetchLike = (i, init) => fetch(i, init),
+    private readonly baseUrl = "https://api.anthropic.com",
   ) {
     if (!apiKey) throw new Error("ANTHROPIC_API_KEY is required");
   }
@@ -71,7 +76,7 @@ export class AnthropicProvider implements LlmProvider {
   async complete(req: CompletionRequest): Promise<CompletionResult> {
     const json = (await post(
       this.fetchImpl,
-      "https://api.anthropic.com/v1/messages",
+      `${this.baseUrl}/v1/messages`,
       { "x-api-key": this.apiKey, "anthropic-version": "2023-06-01" },
       {
         model: this.model,
@@ -83,6 +88,30 @@ export class AnthropicProvider implements LlmProvider {
     )) as { content?: Array<{ type: string; text?: string }> };
     const text = (json.content ?? []).filter((c) => c.type === "text").map((c) => c.text ?? "").join("");
     return { text, model: this.model };
+  }
+
+  /** Messages API with tool use. Only text and tool_use blocks are read back; anything else is dropped. */
+  async chat(req: ChatRequest): Promise<ChatResult> {
+    const json = (await post(
+      this.fetchImpl,
+      `${this.baseUrl}/v1/messages`,
+      { "x-api-key": this.apiKey, "anthropic-version": "2023-06-01" },
+      {
+        model: this.model,
+        max_tokens: req.maxTokens,
+        temperature: 0,
+        system: req.system,
+        messages: req.messages,
+        ...(req.tools.length ? { tools: req.tools } : {}),
+      },
+    )) as { content?: Array<{ type: string; text?: string; id?: string; name?: string; input?: unknown }>; stop_reason?: string };
+    const content: ContentBlock[] = [];
+    for (const b of json.content ?? []) {
+      if (b.type === "text" && typeof b.text === "string") content.push({ type: "text", text: b.text });
+      else if (b.type === "tool_use" && typeof b.id === "string" && typeof b.name === "string") content.push({ type: "tool_use", id: b.id, name: b.name, input: b.input ?? {} });
+    }
+    const stop = json.stop_reason;
+    return { content, stopReason: stop === "end_turn" || stop === "tool_use" || stop === "max_tokens" ? stop : "other", model: this.model };
   }
 }
 
@@ -114,6 +143,23 @@ export class GeminiProvider implements LlmProvider {
     )) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
     const text = (json.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("");
     return { text, model: this.model };
+  }
+}
+
+/** Deterministic tool-calling provider for tests: each turn's reply comes from a script. */
+export class ScriptedChatProvider implements ChatProvider {
+  readonly name = "scripted";
+  readonly model = "scripted-chat-1";
+  readonly requests: ChatRequest[] = [];
+  constructor(private readonly turn: (req: ChatRequest, n: number) => readonly ContentBlock[] | Error) {}
+  async complete(): Promise<CompletionResult> {
+    throw new Error("ScriptedChatProvider only supports chat");
+  }
+  async chat(req: ChatRequest): Promise<ChatResult> {
+    this.requests.push({ ...req, messages: [...req.messages] });
+    const r = this.turn(req, this.requests.length);
+    if (r instanceof Error) throw r;
+    return { content: r, stopReason: r.some((b) => b.type === "tool_use") ? "tool_use" : "end_turn", model: this.model };
   }
 }
 

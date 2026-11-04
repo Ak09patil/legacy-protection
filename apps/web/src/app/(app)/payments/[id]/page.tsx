@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Heading, Panel, buttonStyles, money } from "@/components/app/ui";
 import { getPayment } from "@/server/payments";
 import { requireRole, snapshot } from "@/server/plans";
+import { TalkItThrough } from "./TalkItThrough";
 import { paymentAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
@@ -104,6 +105,8 @@ export default async function PaymentPage({ params }: { params: Promise<{ id: st
           </ul>
         </Panel>
       )}
+
+      {(open || p.status === "CONFIRM_NEEDED" || p.status === "RELEASE_SCHEDULED") && <TalkItThrough paymentId={p.id} />}
 
       {p.status === "CONFIRM_NEEDED" && (
         <div className="space-y-3">

@@ -3,7 +3,7 @@
 import { useEffect, useId, useState, useTransition } from "react";
 import type { PlanDocument } from "@lp/policy";
 import { Heading, Panel, buttonStyles } from "@/components/app/ui";
-import { confirmPlanAction, draftFromWordsAction, previewPlanAction } from "../../actions";
+import { confirmPlanAction, draftFromWordsAction, previewPlanAction, suggestCarersAction } from "../../actions";
 
 type Carer = PlanDocument["obligations"][number];
 
@@ -39,6 +39,53 @@ export function PlanEditor({ initial, detectTimeZone = false }: { initial: PlanD
   const [issues, setIssues] = useState<string[]>([]);
   const [note, setNote] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  type Suggestion = { payeeName: string; payeeEmail: string; amountPerPaymentMinor: number; cadence: "WEEKLY" | "BIWEEKLY" | "MONTHLY"; why: string; payments: number };
+  const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null);
+  const [suggestNote, setSuggestNote] = useState<string | null>(null);
+  const suggest = () =>
+    start(async () => {
+      setSuggestNote(null);
+      const r = await suggestCarersAction();
+      if (r.ok) {
+        const known = new Set(plan.obligations.map((o) => o.payeeEmail));
+        const fresh = r.carers.filter((c) => !known.has(c.payeeEmail));
+        setSuggestions(fresh);
+        setSuggestNote(
+          fresh.length
+            ? `Found in ${r.source}. Check each one before adding.`
+            : r.dropped.length
+              ? "We didn’t find anyone paid regularly enough to suggest. You can still add someone yourself."
+              : "We didn’t find anyone who looks like they work in your home.",
+        );
+      } else {
+        setSuggestions(null);
+        setSuggestNote(
+          {
+            AI_OFF: "Suggestions from your payment history aren’t switched on here yet. Add people yourself below.",
+            NO_HISTORY: "There’s no payment history to look at yet. Add people yourself below.",
+            PROVIDER_UNAVAILABLE: "We couldn’t look at your payments just now. Try again in a moment, or add people yourself.",
+            INVALID_OUTPUT: "We couldn’t make sense of your payments safely. Add people yourself below.",
+            TOO_MANY_STEPS: "That took too long. Try again, or add people yourself.",
+          }[r.reason],
+        );
+      }
+    });
+  const addSuggestion = (c: Suggestion) =>
+    edit((p) => {
+      p.obligations.push({
+        id: `carer-${c.payeeEmail.split("@")[0]!.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30)}`,
+        kind: "HOUSEHOLD_EMPLOYEE",
+        payeeName: c.payeeName,
+        payeeEmail: c.payeeEmail,
+        description: "help at home",
+        amountPerPaymentMinor: c.amountPerPaymentMinor,
+        maxPerMonthMinor: Math.max(c.amountPerPaymentMinor, c.amountPerPaymentMinor * (c.cadence === "WEEKLY" ? 5 : c.cadence === "BIWEEKLY" ? 3 : 1)),
+        currency: "USD",
+        cadence: c.cadence,
+        continueForDaysAfterActivation: 60,
+      });
+      return p;
+    });
 
   const edit = (fn: (p: PlanDocument) => PlanDocument) => {
     setPlan((p) => fn(structuredClone(p)));
@@ -173,6 +220,40 @@ export function PlanEditor({ initial, detectTimeZone = false }: { initial: PlanD
           <p className="mt-1 text-[16px] text-ink-soft">
             Carers or helpers in your home we should keep paying for a while, so care doesn’t stop suddenly. Nobody else can be added here.
           </p>
+        </div>
+        <div className="rounded-[1.5rem] bg-sage/40 p-4">
+          <button type="button" onClick={suggest} disabled={pending} className={buttonStyles.soft}>
+            {pending ? "Looking at your payments…" : "Look at my payments and suggest"}
+          </button>
+          {suggestNote && (
+            <p role="status" className="mt-3 text-[15px] text-ink-soft">
+              {suggestNote}
+            </p>
+          )}
+          {suggestions && suggestions.length > 0 && (
+            <ul className="mt-3 space-y-3">
+              {suggestions.map((c) => (
+                <li key={c.payeeEmail} className="rounded-2xl bg-white/90 p-4">
+                  <p className="text-[17px] font-semibold">
+                    {c.payeeName}, ${(c.amountPerPaymentMinor / 100).toFixed(2)} {c.cadence === "WEEKLY" ? "a week" : c.cadence === "BIWEEKLY" ? "every 2 weeks" : "a month"}
+                  </p>
+                  <p className="mt-0.5 text-[15px] text-ink-soft">
+                    {c.why} You’ve paid them {c.payments} times.
+                  </p>
+                  <button
+                    type="button"
+                    className={`${buttonStyles.quiet} mt-2`}
+                    onClick={() => {
+                      addSuggestion(c);
+                      setSuggestions((xs) => xs?.filter((x) => x.payeeEmail !== c.payeeEmail) ?? null);
+                    }}
+                  >
+                    Add {c.payeeName.split(" ")[0]} to my plan
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         {plan.obligations.map((o, i) => (
           <div key={o.id} className="space-y-4 rounded-[1.5rem] bg-mist/70 p-4">

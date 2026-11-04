@@ -18,6 +18,7 @@
     "@lp/paypal": "workspace:*",
     "@lp/policy": "workspace:*",
     "@lp/service": "workspace:*",
+    "@paypal/agent-toolkit": "1.11.0",
     "@react-three/fiber": "^9.8.2",
     "@simplewebauthn/browser": "^13.3.0",
     "@simplewebauthn/server": "^13.3.3",

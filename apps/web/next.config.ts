@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: path.resolve(__dirname, "../.."),
   // The engine packages are TypeScript source in this monorepo; compile them with the app.
   transpilePackages: ["@lp/core", "@lp/policy", "@lp/ai", "@lp/db", "@lp/service", "@lp/guard", "@lp/paypal"],
-  serverExternalPackages: ["pg", "@temporalio/client"],
+  serverExternalPackages: ["pg", "@temporalio/client", "@paypal/agent-toolkit"],
   webpack(config) {
     config.resolve.alias = {
       ...config.resolve.alias,

@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@lp/policy": "workspace:*",
+    "@lp/guard": "workspace:*",
     "zod": "^3.25.76"
   }
 }

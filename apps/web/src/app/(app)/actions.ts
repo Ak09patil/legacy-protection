@@ -6,6 +6,8 @@ import { redirect } from "next/navigation";
 import { beginStepUp, beginStepUpWithCode, finishStepUp, finishStepUpWithCode, hasPasskey } from "@/server/auth";
 import { tx } from "@/server/db";
 import { pokeTimeline } from "@/server/timeline";
+import { suggestCarers, talkAboutPayment } from "@/server/ai";
+import type { ChatMessage } from "@lp/ai";
 import { actOnPayment, createPayment, type PaymentAction } from "@/server/payments";
 import { applyEvent, checkIn, confirmPlan, inviteExecutor, reissueInvite, requireRole, saveDraft } from "@/server/plans";
 import { PlanDocumentSchema, summarisePlan } from "@lp/policy";
@@ -129,4 +131,14 @@ export async function createPaymentAction(input: unknown) {
   await pokeTimeline(ctx.planId);
   revalidatePath("/home");
   redirect(`/payments/${r.id}`);
+}
+
+export async function suggestCarersAction() {
+  const ctx = await requireRole("OWNER");
+  return suggestCarers(ctx);
+}
+
+export async function talkAboutPaymentAction(paymentId: string, conversation: ChatMessage[]) {
+  const ctx = await requireRole("OWNER");
+  return talkAboutPayment(ctx, paymentId, conversation);
 }
