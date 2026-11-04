@@ -13,6 +13,7 @@ export default defineConfig({
       { find: /^@lp\/paypal$/, replacement: src("paypal") },
       { find: /^@lp\/db$/, replacement: src("db") },
       { find: /^@lp\/ai$/, replacement: src("ai") },
+      { find: /^@lp\/guard$/, replacement: src("guard") },
     ],
   },
   test: { include: ["packages/*/test/**/*.test.ts", "workers/*/test/**/*.test.ts"], testTimeout: 30_000 },
