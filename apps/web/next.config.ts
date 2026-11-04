@@ -4,6 +4,8 @@ import type { NextConfig } from "next";
 const pkg = (name: string) => path.resolve(__dirname, `../../packages/${name}/src/index.ts`);
 
 const nextConfig: NextConfig = {
+  // The monorepo root, so Next never guesses from an unrelated lockfile higher up.
+  outputFileTracingRoot: path.resolve(__dirname, "../.."),
   // The engine packages are TypeScript source in this monorepo; compile them with the app.
   transpilePackages: ["@lp/core", "@lp/policy", "@lp/ai", "@lp/db"],
   serverExternalPackages: ["pg"],
