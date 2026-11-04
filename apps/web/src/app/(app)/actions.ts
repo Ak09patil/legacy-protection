@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { beginStepUp, beginStepUpWithCode, finishStepUp, finishStepUpWithCode, hasPasskey } from "@/server/auth";
 import { tx } from "@/server/db";
+import { pokeTimeline } from "@/server/timeline";
 import { actOnPayment, createPayment, type PaymentAction } from "@/server/payments";
 import { applyEvent, checkIn, confirmPlan, inviteExecutor, reissueInvite, requireRole, saveDraft } from "@/server/plans";
 import { PlanDocumentSchema, summarisePlan } from "@lp/policy";
@@ -12,6 +13,7 @@ import { PlanDocumentSchema, summarisePlan } from "@lp/policy";
 export async function checkInAction(): Promise<void> {
   const ctx = await requireRole("OWNER");
   await checkIn(ctx, "app");
+  await pokeTimeline(ctx.planId);
   revalidatePath("/home");
 }
 
@@ -27,6 +29,7 @@ export async function confirmPlanAction(plan: unknown) {
   const ctx = await requireRole("OWNER");
   const r = await confirmPlan(ctx, plan);
   if (!r.ok) return r;
+  await pokeTimeline(ctx.planId);
   revalidatePath("/plan");
   revalidatePath("/home");
   redirect(`/plan?confirmed=${r.version}${r.inviteLinks.length ? "&invited=1" : ""}`);
@@ -74,6 +77,7 @@ export async function finishContactConfirmAction(
     if (applied.rejected) return { ok: false, message: "There’s nothing to confirm right now." };
     return { ok: true };
   });
+  if (r.ok) await pokeTimeline(ctx.planId);
   revalidatePath("/contact");
   return r;
 }
@@ -108,6 +112,7 @@ export async function paymentAction(formData: FormData): Promise<void> {
   const action = String(formData.get("action") ?? "") as PaymentAction;
   if (!PAYMENT_ACTIONS.includes(action)) throw new Error("Unknown action");
   await actOnPayment(ctx, id, action);
+  await pokeTimeline(ctx.planId);
   revalidatePath(`/payments/${id}`);
   revalidatePath("/home");
 }
@@ -121,6 +126,7 @@ export async function createPaymentAction(input: unknown) {
   const ctx = await requireRole("OWNER");
   const r = await createPayment(ctx, input);
   if (!r.ok) return r;
+  await pokeTimeline(ctx.planId);
   revalidatePath("/home");
   redirect(`/payments/${r.id}`);
 }

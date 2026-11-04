@@ -14,6 +14,8 @@ export default defineConfig({
       { find: /^@lp\/db$/, replacement: src("db") },
       { find: /^@lp\/ai$/, replacement: src("ai") },
       { find: /^@lp\/guard$/, replacement: src("guard") },
+      { find: /^@lp\/service$/, replacement: src("service") },
+      { find: /^@lp\/db\/audit$/, replacement: fileURLToPath(new URL("./packages/db/src/audit.ts", import.meta.url)) },
     ],
   },
   test: { include: ["packages/*/test/**/*.test.ts", "workers/*/test/**/*.test.ts"], testTimeout: 30_000 },

@@ -1,26 +1,20 @@
 /**
- * The side effects the plan workflow may ask for. Workflows only see these
- * signatures; implementations live in activities.ts (I/O happens there).
+ * What the timeline workflow may ask for. Every activity re-reads Postgres and
+ * re-checks its condition before acting, and takes the workflow's clock as
+ * `now`, so timers decide *when* to look and the database decides *whether*
+ * anything happens (INV-06, INV-07, INV-20).
  */
 
-import type { ExecutionStep } from "@lp/policy";
-
-export interface CheckinWindow {
-  readonly dueAt: number;
-  readonly reminders: readonly number[];
-  readonly missedAt: number;
-}
+import type { Timeline } from "@lp/service";
 
 export interface Activities {
-  /** Next check-in window after the owner's last activity, in the owner's time zone (INV-20). */
-  nextCheckin(planId: string, lastActivityAt: number): Promise<CheckinWindow>;
-  sendCheckinReminder(planId: string, dueAt: number, n: number): Promise<void>;
-  notifyOwnerAllChannels(planId: string, reason: string): Promise<void>;
-  notifyContact(planId: string, reason: string): Promise<void>;
-  /** Appends to the hash-chained audit log in the same transaction as any state write (INV-15). */
-  audit(planId: string, kind: string, payload: Record<string, unknown>): Promise<void>;
-  /** Derives the only steps the activated plan may run, from the confirmed version (INV-02, INV-04). */
-  planSteps(planId: string, planVersionId: string, activatedAt: number): Promise<ExecutionStep[]>;
-  /** Runs one step. Idempotent by (planVersionId, step.id) (INV-03). */
-  executeStep(planId: string, planVersionId: string, step: ExecutionStep): Promise<{ outcome: string }>;
+  loadTimeline(planId: string): Promise<Timeline | null>;
+  sendReminder(planId: string, dueAt: number, n: number): Promise<"SENT" | "SKIPPED">;
+  markMissedIfDue(planId: string, now: number): Promise<boolean>;
+  finishWaitingIfDue(planId: string, now: number): Promise<boolean>;
+  startExecution(planId: string, now: number): Promise<boolean>;
+  pendingSteps(planId: string): Promise<Array<{ id: string; dueAt: number }>>;
+  /** Runs one step through the policy gate. Idempotent by (planVersionId, stepId) (INV-03). */
+  runStep(planId: string, stepId: string, now: number): Promise<{ outcome: "DONE" | "REFUSED" | "SKIPPED"; detail?: string }>;
+  completeIfAllDone(planId: string, now: number): Promise<boolean>;
 }

@@ -1,0 +1,19 @@
+{
+  "name": "@lp/service",
+  "version": "0.1.0",
+  "description": "Plan state, timeline and execution on Postgres. Shared by the web app and the Temporal worker.",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./src/index.ts", "default": "./dist/index.js" } },
+  "dependencies": {
+    "@lp/core": "workspace:*",
+    "@lp/db": "workspace:*",
+    "@lp/guard": "workspace:*",
+    "@lp/paypal": "workspace:*",
+    "@lp/policy": "workspace:*",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": { "@types/pg": "^8.23.1" }
+}

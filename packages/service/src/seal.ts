@@ -1,4 +1,3 @@
-import "server-only";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 
 /** AES-256-GCM with a key derived from APP_SECRET, which never lives in the database. */

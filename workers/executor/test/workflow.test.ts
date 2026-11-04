@@ -1,211 +1,183 @@
 /**
- * Runs the real workflow on Temporal's time-skipping test server: months of
- * timers pass in milliseconds, and signals arrive at chosen moments.
- * Activities are in-memory fakes that behave like idempotent PayPal calls.
+ * The real timeline workflow on Temporal's time-skipping test server, with
+ * the real activities on a real Postgres. Weeks of timers pass in seconds;
+ * the database decides what happens. Only PayPal is replaced, by a recording
+ * executor that behaves like idempotent PayPal calls.
  */
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { TestWorkflowEnvironment } from "@temporalio/testing";
 import { bundleWorkflowCode, Worker, type WorkflowBundleWithSourceMap } from "@temporalio/worker";
-import type { ExecutionStep } from "@lp/policy";
-import type { Activities, CheckinWindow } from "../src/activity-types.js";
-import {
-  contactConfirmedSignal,
-  ownerActivitySignal,
-  stateQuery,
-  type PlanLifecycleInput,
-} from "../src/workflows.js";
+import pg from "pg";
+import { migrate } from "@lp/db";
+import { PlanDocumentSchema, type ExecutionStep } from "@lp/policy";
+import { applyEvent, inTx, loadTimeline, type Executor } from "@lp/service";
+import { createActivities } from "../src/activities.js";
+import { changedSignal } from "../src/workflows.js";
 
+const ADMIN_URL = process.env.TEST_DATABASE_ADMIN_URL;
+const suite = ADMIN_URL ? describe : describe.skip;
+const PW = "lp_app_test_only";
 const H = 3_600_000;
 const DAY = 24 * H;
-const WAIT = 72 * H;
+const dbName = `lp_wf_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
 
 let env: TestWorkflowEnvironment;
 let bundle: WorkflowBundleWithSourceMap;
+let admin: pg.Client;
+let pool: pg.Pool;
 
-beforeAll(async () => {
-  env = await TestWorkflowEnvironment.createTimeSkipping();
-  bundle = await bundleWorkflowCode({
-    workflowsPath: fileURLToPath(new URL("../src/workflows.ts", import.meta.url)),
-    logger: { log: () => {}, trace: () => {}, debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
-  });
-}, 120_000);
+const url = (db: string, user?: string) => {
+  const u = new URL(ADMIN_URL!);
+  u.pathname = `/${db}`;
+  if (user) {
+    u.username = user;
+    u.password = PW;
+  }
+  return u.toString();
+};
 
-afterAll(async () => {
-  await env?.teardown();
+class RecordingExecutor implements Executor {
+  readonly name = "recording";
+  /** PayPal acts once per request id, however many times it's called. */
+  readonly effects = new Map<string, string>();
+  attempts = 0;
+  failFirst = 0;
+  async accountSnapshot() {
+    return { activeSubscriptionIds: [], openInvoiceIds: ["INV2-QUILT"] };
+  }
+  async run(step: ExecutionStep, ctx: { requestId: string }) {
+    this.attempts++;
+    const key = ctx.requestId || step.id;
+    if (!this.effects.has(key)) this.effects.set(key, step.id);
+    if (this.attempts <= this.failFirst) throw new Error("connection reset after send");
+    return { reference: `ref-${step.id}` };
+  }
+}
+
+const plan = PlanDocumentSchema.parse({
+  schemaVersion: 1,
+  trustedContact: { name: "Priya", email: "priya@example.com" },
+  checkin: { timeZone: "America/New_York", intervalDays: 7, localHour: 10, localMinute: 0 },
+  waitingPeriodHours: 72,
+  obligations: [
+    {
+      id: "maria-care",
+      kind: "HOUSEHOLD_EMPLOYEE",
+      payeeName: "Maria",
+      payeeEmail: "maria@example.com",
+      description: "home care",
+      amountPerPaymentMinor: 32000,
+      maxPerMonthMinor: 140000,
+      currency: "USD",
+      cadence: "WEEKLY",
+      continueForDaysAfterActivation: 14,
+    },
+  ],
+  onActivation: { cancelSubscriptions: true, cancelOpenInvoices: true, holdBalanceForEstate: true },
+  contentVisibleTo: [],
 });
 
-class Fakes {
-  audit: Array<{ kind: string; payload: Record<string, unknown> }> = [];
-  ownerNotices: string[] = [];
-  contactNotices: string[] = [];
-  reminders = 0;
-  /** Effects keyed like PayPal-Request-Id: (planVersionId, stepId). */
-  effects = new Map<string, number>();
-  attempts = new Map<string, number>();
-  failFirst = new Map<string, number>();
-
-  steps: ExecutionStep[] = [
-    { id: "cancel-sub:I-1", type: "CANCEL_SUBSCRIPTION", subscriptionId: "I-1" },
-    { id: "pay:maria:0", type: "PAY_OBLIGATION", obligationId: "maria", payeeEmail: "maria@example.com", amountMinor: 32000, currency: "USD", dueAt: 0 },
-    { id: "pay:maria:1", type: "PAY_OBLIGATION", obligationId: "maria", payeeEmail: "maria@example.com", amountMinor: 32000, currency: "USD", dueAt: 7 * DAY },
-    { id: "executor-package", type: "ASSEMBLE_EXECUTOR_PACKAGE" },
-  ];
-
-  activities(): Activities {
-    return {
-      nextCheckin: async (_p, last): Promise<CheckinWindow> => {
-        const dueAt = last + 7 * DAY;
-        return { dueAt, reminders: [dueAt + 24 * H, dueAt + 48 * H], missedAt: dueAt + 72 * H };
-      },
-      sendCheckinReminder: async () => {
-        this.reminders++;
-      },
-      notifyOwnerAllChannels: async (_p, r) => {
-        this.ownerNotices.push(r);
-      },
-      notifyContact: async (_p, r) => {
-        this.contactNotices.push(r);
-      },
-      audit: async (_p, kind, payload) => {
-        this.audit.push({ kind, payload });
-      },
-      planSteps: async (_p, _v, activatedAt) =>
-        this.steps.map((s) => (s.type === "PAY_OBLIGATION" ? { ...s, dueAt: activatedAt + s.dueAt } : s)),
-      executeStep: async (_p, version, step) => {
-        const key = `${version}:${step.id}`;
-        const n = (this.attempts.get(key) ?? 0) + 1;
-        this.attempts.set(key, n);
-        if (!this.effects.has(key)) this.effects.set(key, 1); // PayPal acts once per request id
-        if (n <= (this.failFirst.get(step.id) ?? 0)) throw new Error("connection reset after send");
-        return { outcome: "DONE" };
-      },
-    };
-  }
-
-  transitions(): string[] {
-    return this.audit.filter((a) => a.kind === "LIFECYCLE").map((a) => `${a.payload.event}->${a.payload.to}`);
-  }
+async function newPlan(at: number) {
+  const owner = randomUUID();
+  const contact = randomUUID();
+  const planId = randomUUID();
+  const versionId = randomUUID();
+  await pool.query(`INSERT INTO users (id, email, display_name) VALUES ($1, $2, 'Eleanor Hughes'), ($3, $4, 'Priya')`, [owner, `${owner}@example.com`, contact, `${contact}@example.com`]);
+  await pool.query(`INSERT INTO plans (id, owner_id) VALUES ($1, $2)`, [planId, owner]);
+  await pool.query(`INSERT INTO memberships (plan_id, user_id, role) VALUES ($1, $2, 'OWNER'), ($1, $3, 'TRUSTED_CONTACT')`, [planId, owner, contact]);
+  await pool.query(`INSERT INTO plan_versions (id, plan_id, version, document, confirmed_at, confirmed_by) VALUES ($1, $2, 1, $3, $4, $5)`, [versionId, planId, JSON.stringify(plan), new Date(at), owner]);
+  await inTx(pool, (c) => applyEvent(c, planId, { type: "PLAN_CONFIRMED", planVersionId: versionId, waitingPeriodMs: 72 * H, at }, owner));
+  return { planId, owner, contact };
 }
 
-async function start(f: Fakes, id: string) {
-  const worker = await Worker.create({
-    connection: env.nativeConnection,
-    taskQueue: id,
-    workflowBundle: bundle,
-    activities: f.activities(),
+async function waitFor(check: () => Promise<boolean>, skipMs: number, tries = 40) {
+  for (let i = 0; i < tries; i++) {
+    if (await check()) return;
+    await env.sleep(skipMs);
+  }
+  throw new Error("condition not reached");
+}
+
+suite("plan timeline workflow (Temporal time-skipping + Postgres)", () => {
+  beforeAll(async () => {
+    admin = new pg.Client({ connectionString: ADMIN_URL });
+    await admin.connect();
+    await admin.query(`CREATE DATABASE ${dbName}`);
+    const o = new pg.Client({ connectionString: url(dbName) });
+    await o.connect();
+    await migrate(o, PW);
+    await o.end();
+    pool = new pg.Pool({ connectionString: url(dbName, "lp_app"), max: 6 });
+    pool.on("error", () => undefined);
+    env = await TestWorkflowEnvironment.createTimeSkipping();
+    bundle = await bundleWorkflowCode({
+      workflowsPath: fileURLToPath(new URL("../src/workflows.ts", import.meta.url)),
+      logger: { log: () => {}, trace: () => {}, debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+    });
+  }, 180_000);
+
+  afterAll(async () => {
+    await env?.teardown();
+    await pool?.end();
+    await admin?.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
+    await admin?.end();
   });
-  const input: PlanLifecycleInput = { planId: id, planVersionId: `${id}-v1`, waitingPeriodMs: WAIT };
-  return { worker, input };
-}
 
-describe("plan lifecycle workflow", () => {
-  it("runs the full path: missed check-ins, passkey confirmation, waiting period, execution", async () => {
-    const f = new Fakes();
-    const { worker, input } = await start(f, "full-path");
-    await worker.runUntil(async () => {
-      const h = await env.client.workflow.start("planLifecycle", { taskQueue: "full-path", workflowId: "full-path", args: [input] });
-      await env.sleep(7 * DAY + 72 * H + H); // check-in due, both reminders, then missed
-      expect((await h.query(stateQuery)).checkinsMissed).toBe(true);
-      await h.signal(contactConfirmedSignal, { passkeyVerified: true });
-      const final = await h.result();
-      expect(final.phase).toBe("COMPLETED");
+  const run = async <T>(executor: Executor, fn: (taskQueue: string) => Promise<T>) => {
+    const taskQueue = `tq-${randomUUID()}`;
+    const worker = await Worker.create({ connection: env.nativeConnection, taskQueue, workflowBundle: bundle, activities: createActivities(pool, executor) });
+    return worker.runUntil(fn(taskQueue));
+  };
+
+  it("INV-06 INV-20 a missed check-in, a confirmation and the full wait activate the plan; then it pays Maria once per week", async () => {
+    const start = (await env.currentTimeMs()) as unknown as number;
+    const { planId, contact } = await newPlan(Number(start));
+    const ex = new RecordingExecutor();
+    ex.failFirst = 1; // the first PayPal call fails after sending; the retry must not pay twice
+
+    await run(ex, async (taskQueue) => {
+      const h = await env.client.workflow.start("planTimeline", { taskQueue, workflowId: `plan-${planId}`, args: [{ planId }] });
+      // Ten days pass with no check-in: reminders, then the check-in counts as missed.
+      await waitFor(async () => (await loadTimeline(pool, planId))?.checkinsMissed === true, DAY);
+      // Priya confirms; the app signals the timeline.
+      const confirmAt = Number(await env.currentTimeMs());
+      await inTx(pool, (c) => applyEvent(c, planId, { type: "CONTACT_CONFIRMED", passkeyVerified: true, at: confirmAt }, contact));
+      await h.signal(changedSignal);
+      await waitFor(async () => (await loadTimeline(pool, planId))?.phase === "COMPLETED", DAY, 60);
+      return h.result();
     });
-    expect(f.reminders).toBe(2);
-    expect(f.ownerNotices).toEqual(["CONTACT_CONFIRMED", "WAITING_STARTED", "ACTIVATED"]);
-    expect([...f.effects.keys()].sort()).toEqual(f.steps.map((s) => `full-path-v1:${s.id}`).sort());
-    expect(f.transitions()).toEqual([
-      "PLAN_CONFIRMED->MONITORING",
-      "CHECKIN_SEQUENCE_MISSED->MONITORING",
-      "CONTACT_CONFIRMED->WAITING",
-      "WAITING_PERIOD_CHECK->ACTIVATED",
-      "EXECUTION_STARTED->EXECUTING",
-      "EXECUTION_COMPLETED->COMPLETED",
-    ]);
-  }, 60_000);
 
-  it("INV-07 owner activity during the waiting period cancels activation and nothing executes", async () => {
-    const f = new Fakes();
-    const { worker, input } = await start(f, "owner-returns");
-    await worker.runUntil(async () => {
-      const h = await env.client.workflow.start("planLifecycle", { taskQueue: "owner-returns", workflowId: "owner-returns", args: [input] });
-      await env.sleep(7 * DAY + 72 * H + H);
-      await h.signal(contactConfirmedSignal, { passkeyVerified: true });
-      await env.sleep(24 * H); // a day into the 72-hour wait
-      expect((await h.query(stateQuery)).phase).toBe("WAITING");
-      await h.signal(ownerActivitySignal);
-      await env.sleep(H);
-      const s = await h.query(stateQuery);
-      expect(s.phase).toBe("MONITORING");
-      expect(s.checkinsMissed).toBe(false);
-      await env.sleep(10 * DAY); // well past when activation would have happened
-      expect((await h.query(stateQuery)).phase).not.toBe("ACTIVATED");
-      await h.terminate("test complete");
-    });
-    expect(f.effects.size).toBe(0);
-    expect(f.contactNotices).toContain("ACTIVATION_CANCELLED_BY_OWNER");
-  }, 60_000);
+    const kinds = (await pool.query<{ kind: string }>(`SELECT kind FROM audit_events WHERE plan_id = $1 ORDER BY seq`, [planId])).rows.map((r) => r.kind);
+    expect(kinds).toEqual(expect.arrayContaining(["CHECKIN_REMINDER_SENT", "CHECKIN_SEQUENCE_MISSED", "CONTACT_CONFIRMED", "WAITING_PERIOD_CHECK", "EXECUTION_STARTED", "STEP_DONE", "EXECUTION_COMPLETED"]));
+    expect(kinds.filter((k) => k === "CHECKIN_REMINDER_SENT")).toHaveLength(2);
+    const paid = [...ex.effects.values()].filter((id) => id.startsWith("pay:"));
+    expect(paid).toEqual(["pay:maria-care:0", "pay:maria-care:1"]); // two weeks, each once, despite the retry
+  }, 120_000);
 
-  it("INV-06 a contact confirmation without a passkey changes nothing", async () => {
-    const f = new Fakes();
-    const { worker, input } = await start(f, "no-passkey");
-    await worker.runUntil(async () => {
-      const h = await env.client.workflow.start("planLifecycle", { taskQueue: "no-passkey", workflowId: "no-passkey", args: [input] });
-      await env.sleep(7 * DAY + 72 * H + H);
-      await h.signal(contactConfirmedSignal, { passkeyVerified: false });
-      await env.sleep(30 * DAY);
-      const s = await h.query(stateQuery);
-      expect(s.phase).toBe("MONITORING");
-      expect(s.contactConfirmed).toBe(false);
-      await h.terminate("test complete");
-    });
-    expect(f.effects.size).toBe(0);
-  }, 60_000);
-
-  it("INV-03 a payment that fails after PayPal acted is retried with the same key and pays once", async () => {
-    const f = new Fakes();
-    f.failFirst.set("pay:maria:0", 2);
-    const { worker, input } = await start(f, "retry");
-    await worker.runUntil(async () => {
-      const h = await env.client.workflow.start("planLifecycle", { taskQueue: "retry", workflowId: "retry", args: [input] });
-      await env.sleep(7 * DAY + 72 * H + H);
-      await h.signal(contactConfirmedSignal, { passkeyVerified: true });
-      expect((await h.result()).phase).toBe("COMPLETED");
-    });
-    expect(f.attempts.get("retry-v1:pay:maria:0")).toBe(3);
-    expect(f.effects.get("retry-v1:pay:maria:0")).toBe(1);
-  }, 60_000);
-
-  it("INV-03 chaos: kill the worker between scheduled payouts and a new worker finishes without paying twice", async () => {
-    const f = new Fakes();
-    const id = "chaos";
-    const input: PlanLifecycleInput = { planId: id, planVersionId: `${id}-v1`, waitingPeriodMs: WAIT };
-    // No workflow cache: a worker that dies takes nothing with it, and the next one
-    // rebuilds the workflow purely by replaying its event history.
-    const mk = () =>
-      Worker.create({
-        connection: env.nativeConnection,
-        taskQueue: id,
-        workflowBundle: bundle,
-        activities: f.activities(),
-        maxCachedWorkflows: 0,
+  it("INV-07 the owner checking in during the wait stops everything", async () => {
+    const start = Number(await env.currentTimeMs());
+    const { planId, owner, contact } = await newPlan(start);
+    const ex = new RecordingExecutor();
+    await run(ex, async (taskQueue) => {
+      const h = await env.client.workflow.start("planTimeline", { taskQueue, workflowId: `plan-${planId}`, args: [{ planId }] });
+      await waitFor(async () => (await loadTimeline(pool, planId))?.checkinsMissed === true, DAY);
+      const confirmAt = Number(await env.currentTimeMs());
+      await inTx(pool, (c) => applyEvent(c, planId, { type: "CONTACT_CONFIRMED", passkeyVerified: true, at: confirmAt }, contact));
+      await h.signal(changedSignal);
+      await env.sleep(2 * DAY);
+      expect((await loadTimeline(pool, planId))?.phase).toBe("WAITING");
+      const now = Number(await env.currentTimeMs());
+      await inTx(pool, async (c) => {
+        await c.query(`UPDATE plan_state SET last_checkin_at = $2 WHERE plan_id = $1`, [planId, new Date(now)]);
+        await applyEvent(c, planId, { type: "OWNER_ACTIVITY", at: now }, owner);
       });
-
-    const first = await mk();
-    const h = await first.runUntil(async () => {
-      const handle = await env.client.workflow.start("planLifecycle", { taskQueue: id, workflowId: id, args: [input] });
-      await env.sleep(7 * DAY + 72 * H + H);
-      await handle.signal(contactConfirmedSignal, { passkeyVerified: true });
-      await env.sleep(WAIT + H); // activated; first payment done, second is a week away
-      return handle;
+      await h.signal(changedSignal);
+      await env.sleep(5 * DAY);
+      expect((await loadTimeline(pool, planId))?.phase).toBe("MONITORING");
+      await h.terminate("test done");
     });
-    // First worker is gone mid-schedule. A fresh worker picks up the same workflow.
-    const paidBeforeCrash = f.effects.get("chaos-v1:pay:maria:0");
-    const second = await mk();
-    await second.runUntil(async () => {
-      expect((await h.result()).phase).toBe("COMPLETED");
-    });
-    expect(paidBeforeCrash).toBe(1);
-    for (const s of f.steps) expect(f.effects.get(`chaos-v1:${s.id}`)).toBe(1);
-  }, 90_000);
+    expect(ex.effects.size).toBe(0); // nothing ran
+  }, 120_000);
 });

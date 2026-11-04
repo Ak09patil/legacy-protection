@@ -3,10 +3,24 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@lp/core": ["packages/core/src/index.ts"],
-      "@lp/policy": ["packages/policy/src/index.ts"],
-      "@lp/guard": ["packages/guard/src/index.ts"],
-      "@lp/paypal": ["packages/paypal/src/index.ts"]
+      "@lp/core": [
+        "packages/core/src/index.ts"
+      ],
+      "@lp/policy": [
+        "packages/policy/src/index.ts"
+      ],
+      "@lp/guard": [
+        "packages/guard/src/index.ts"
+      ],
+      "@lp/paypal": [
+        "packages/paypal/src/index.ts"
+      ],
+      "@lp/service": [
+        "packages/service/src/index.ts"
+      ],
+      "@lp/db/audit": [
+        "packages/db/src/audit.ts"
+      ]
     }
   }
 }

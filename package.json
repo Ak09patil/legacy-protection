@@ -7,11 +7,12 @@
   },
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc -b packages/core packages/policy packages/guard packages/paypal packages/db packages/ai workers/executor",
+    "typecheck": "tsc -b packages/core packages/policy packages/guard packages/service packages/paypal packages/db packages/ai workers/executor",
     "dev": "pnpm --filter @lp/web dev",
     "check:paypal": "node --env-file=.env scripts/check-paypal.mjs",
     "db:migrate": "tsx --env-file=.env packages/db/scripts/migrate.mts",
-    "paypal:smoke": "tsx --env-file=.env --tsconfig tsconfig.scripts.json packages/paypal/scripts/smoke.mts"
+    "paypal:smoke": "tsx --env-file=.env --tsconfig tsconfig.scripts.json packages/paypal/scripts/smoke.mts",
+    "worker": "pnpm --filter @lp/executor start"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
