@@ -182,6 +182,7 @@ export interface ProviderConfig {
   readonly AI_PROVIDER?: string;
   readonly ANTHROPIC_API_KEY?: string;
   readonly ANTHROPIC_MODEL?: string;
+  readonly ANTHROPIC_BASE_URL?: string;
   readonly GEMINI_API_KEY?: string;
   readonly GEMINI_MODEL?: string;
 }
@@ -190,7 +191,7 @@ export interface ProviderConfig {
 export function providerFromEnv(env: ProviderConfig): LlmProvider {
   switch (env.AI_PROVIDER ?? "anthropic") {
     case "anthropic":
-      return new AnthropicProvider(env.ANTHROPIC_API_KEY ?? "", env.ANTHROPIC_MODEL ?? "claude-sonnet-5-5");
+      return new AnthropicProvider(env.ANTHROPIC_API_KEY ?? "", env.ANTHROPIC_MODEL ?? "claude-sonnet-5-5", undefined, env.ANTHROPIC_BASE_URL ?? "https://api.anthropic.com");
     case "gemini":
       return new GeminiProvider(env.GEMINI_API_KEY ?? "", env.GEMINI_MODEL ?? "gemini-3.8-flash");
     default:

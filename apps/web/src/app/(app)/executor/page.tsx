@@ -1,6 +1,9 @@
 import { Heading, Panel, money } from "@/components/app/ui";
 import { db } from "@/server/db";
+import { openJson } from "@lp/vault";
+import type { ExecutionStep } from "@lp/policy";
 import { auditFor, requireRole, snapshot } from "@/server/plans";
+import { webVault } from "@/server/vault";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +11,7 @@ const day = (ms: number, timeZone: string) => new Intl.DateTimeFormat("en-US", {
 
 export default async function ExecutorPage() {
   const ctx = await requireRole("EXECUTOR");
-  const s = await snapshot(ctx.planId);
+  const s = await snapshot(ctx.planId, "executor_view");
   const started = ["ACTIVATED", "EXECUTING", "COMPLETED"].includes(s.state.phase);
 
   // INV-08: until the plan starts, the executor sees nothing about the account.
@@ -25,14 +28,30 @@ export default async function ExecutorPage() {
 
   const tz = s.confirmed.document.checkin.timeZone;
   const [steps, audit] = await Promise.all([
-    db().query<{ id: string; label: string; due_at: Date; status: string; paypal_request_id: string; step: { type: string; amountMinor?: number } }>(
+    db().query<{ id: string; label: string; due_at: Date; status: string; paypal_request_id: string; step: unknown }>(
       `SELECT id, label, due_at, status, paypal_request_id, step FROM execution_steps WHERE plan_id = $1 ORDER BY due_at, id`,
       [ctx.planId],
     ),
     auditFor(ctx.planId),
   ]);
-  const done = steps.rows.filter((x) => x.status === "DONE");
-  const pays = steps.rows.filter((x) => x.step.type === "PAY_OBLIGATION");
+  // Steps are sealed in the database; the executor's view opens them (INV-24).
+  const names = new Map(s.confirmed.document.obligations.map((o) => [o.id, o.payeeName]));
+  const rows = await Promise.all(
+    steps.rows.map(async (r) => {
+      const step = (await openJson(webVault(), ctx.planId, "plan_document", r.step, "executor_view")) as ExecutionStep;
+      const label =
+        step.type === "PAY_OBLIGATION"
+          ? `Pay ${names.get(step.obligationId) ?? "carer"} ${money(step.amountMinor)}`
+          : step.type === "CANCEL_INVOICE"
+            ? `Cancel unpaid invoice ${step.invoiceId}`
+            : step.type === "CANCEL_SUBSCRIPTION"
+              ? `Stop recurring payment ${step.subscriptionId}`
+              : r.label;
+      return { ...r, step, label };
+    }),
+  );
+  const done = rows.filter((x) => x.status === "DONE");
+  const pays = rows.filter((x) => x.step.type === "PAY_OBLIGATION");
 
   return (
     <div className="space-y-6">
@@ -74,7 +93,7 @@ export default async function ExecutorPage() {
             {pays.map((st) => (
               <li key={st.id} className="flex justify-between py-2.5 text-[15px]">
                 <span>{day(st.due_at.getTime(), tz)}</span>
-                <span className="tabular-nums">{money(st.step.amountMinor ?? 0)}</span>
+                <span className="tabular-nums">{money(st.step.type === "PAY_OBLIGATION" ? st.step.amountMinor : 0)}</span>
                 <span className={st.status === "DONE" ? "font-semibold text-green" : "text-ink-soft"}>{st.status === "DONE" ? "Paid" : "Scheduled"}</span>
               </li>
             ))}

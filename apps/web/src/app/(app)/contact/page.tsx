@@ -16,7 +16,7 @@ function ago(ms: number): string {
 
 export default async function ContactPage() {
   const ctx = await requireRole("TRUSTED_CONTACT");
-  const s = await snapshot(ctx.planId);
+  const s = await snapshot(ctx.planId, "contact_view");
   const first = s.owner.firstName;
   const tz = s.confirmed?.document.checkin.timeZone ?? "UTC";
   const phase = s.state.phase;

@@ -21,12 +21,13 @@ export function chatProvider(): ChatProvider | null {
 }
 
 async function localHistory(planId: string): Promise<HistoryPayment[]> {
-  const r = await db().query<{ payee_name: string; payee_email: string; amount_minor: string; created_at: Date; note: string }>(
-    `SELECT payee_name, payee_email, amount_minor, created_at, note FROM payments
+  // Notes stay sealed: the agent only needs who was paid, how much and when.
+  const r = await db().query<{ payee_name: string; payee_email: string; amount_minor: string; created_at: Date }>(
+    `SELECT payee_name, payee_email, amount_minor, created_at FROM payments
       WHERE plan_id = $1 AND status IN ('SENT', 'RELEASED') AND created_at > now() - interval '13 months' ORDER BY created_at`,
     [planId],
   );
-  return r.rows.map((x) => ({ payeeName: x.payee_name, payeeEmail: x.payee_email, amountMinor: Number(x.amount_minor), at: x.created_at.getTime(), note: x.note }));
+  return r.rows.map((x) => ({ payeeName: x.payee_name, payeeEmail: x.payee_email, amountMinor: Number(x.amount_minor), at: x.created_at.getTime() }));
 }
 
 /** PayPal's Agent Toolkit, read-only, when sandbox keys are configured. */
@@ -84,7 +85,7 @@ const METHOD_WORDS: Record<string, string> = { p2p: "PayPal", gift_card: "gift c
 export async function talkAboutPayment(ctx: Ctx, paymentId: string, conversation: ChatMessage[]): Promise<{ ok: true; reply: string } | { ok: false; reason: string }> {
   const provider = chatProvider();
   if (!provider) return { ok: false, reason: "AI_OFF" };
-  const p = await getPayment(ctx, paymentId);
+  const p = await getPayment(ctx, paymentId, "ai_helper");
   if (!p || !["PAUSED", "CONFIRM_NEEDED", "WAITING_FOR_CONTACT", "RELEASE_SCHEDULED"].includes(p.status)) return { ok: false, reason: "NOT_AVAILABLE" };
   const m = await db().query<{ method: string }>(`SELECT method FROM payments WHERE id = $1`, [paymentId]);
   const contact = await db().query<{ display_name: string }>(

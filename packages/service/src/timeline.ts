@@ -9,7 +9,9 @@ import { DEFAULT_POLICY, deadlines, isMissed, nextDue, type CheckinPolicy, type 
 import { appendEvent } from "@lp/db/audit";
 import { PlanDocumentSchema, type PlanDocument } from "@lp/policy";
 import type pg from "pg";
+import { openJson } from "@lp/vault";
 import { applyEvent, outbox, type StateRow, type Tx } from "./lifecycle.js";
+import { serviceVault } from "./vault.js";
 
 export async function inTx<T>(pool: pg.Pool, fn: (c: Tx) => Promise<T>): Promise<T> {
   const c = await pool.connect();
@@ -36,10 +38,13 @@ export interface Timeline {
   waitingEndsAt: number | null;
 }
 
-async function confirmedPlan(q: Pick<pg.Pool, "query">, planVersionId: string | null): Promise<PlanDocument | null> {
+/** The confirmed plan, opened from the vault for running the plan (INV-24). */
+export async function confirmedPlan(q: Pick<pg.Pool, "query">, planVersionId: string | null): Promise<PlanDocument | null> {
   if (!planVersionId) return null;
-  const r = await q.query<{ document: unknown }>(`SELECT document FROM plan_versions WHERE id = $1`, [planVersionId]);
-  return r.rows[0] ? PlanDocumentSchema.parse(r.rows[0].document) : null;
+  const r = await q.query<{ plan_id: string; document: unknown }>(`SELECT plan_id, document FROM plan_versions WHERE id = $1`, [planVersionId]);
+  const row = r.rows[0];
+  if (!row) return null;
+  return PlanDocumentSchema.parse(await openJson(serviceVault(), row.plan_id, "plan_document", row.document, "run_plan"));
 }
 
 export function policyFor(plan: PlanDocument): CheckinPolicy {

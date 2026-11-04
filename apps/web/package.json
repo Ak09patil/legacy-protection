@@ -30,7 +30,8 @@
     "react-dom": "19.1.0",
     "server-only": "^0.0.1",
     "three": "^0.187.0",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "@lp/vault": "workspace:*"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

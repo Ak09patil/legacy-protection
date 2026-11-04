@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { Client, Connection } from "@temporalio/client";
 import { NativeConnection, Worker } from "@temporalio/worker";
 import pg from "pg";
+import { configureVault } from "@lp/service";
+import { httpVault } from "@lp/vault";
 import { createActivities, executorFromEnv } from "./activities.js";
 
 export const TASK_QUEUE = "legacy-protection";
@@ -12,7 +14,12 @@ async function main() {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) throw new Error("DATABASE_URL is not set");
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 5 });
+  // A dropped idle connection (database restart, failover) must not crash the worker; the pool reconnects.
+  pool.on("error", (e) => console.error(`[db] idle connection lost: ${e.message}`));
   const executor = executorFromEnv();
+  // The worker's own vault identity: it may open plan documents to run a plan, never payment notes (INV-24).
+  if (process.env.VAULT_URL && process.env.VAULT_SECRET_WORKER) configureVault(httpVault(process.env.VAULT_URL, "worker", process.env.VAULT_SECRET_WORKER));
+  else if (process.env.NODE_ENV === "production") throw new Error("VAULT_URL and VAULT_SECRET_WORKER must be set in production");
   const connection = await NativeConnection.connect({
     address: process.env.TEMPORAL_ADDRESS ?? "localhost:7233",
     ...(process.env.TEMPORAL_API_KEY ? { tls: true, apiKey: process.env.TEMPORAL_API_KEY } : {}),

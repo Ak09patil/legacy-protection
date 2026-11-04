@@ -16,6 +16,7 @@ import { z } from "zod";
 import { db, tx } from "./db";
 import { applyEvent, outbox, snapshot, type Ctx } from "./plans";
 import { assessPayment } from "./risk";
+import { webVault } from "./vault";
 
 export const POLICY_VERSION = `policy-1.0.0+${RULES_VERSION}`;
 
@@ -37,7 +38,7 @@ export interface PaymentView {
   history: Array<{ at: number; kind: string }>;
 }
 
-export async function getPayment(ctx: Ctx, id: string): Promise<PaymentView | null> {
+export async function getPayment(ctx: Ctx, id: string, purpose: "owner_view" | "ai_helper" = "owner_view"): Promise<PaymentView | null> {
   if (!/^[0-9a-f-]{36}$/.test(id)) return null;
   const p = await db().query<{
     id: string; payee_name: string; amount_minor: string; currency: string; note: string; status: PaymentStatus; release_at: Date | null; created_at: Date;
@@ -60,7 +61,7 @@ export async function getPayment(ctx: Ctx, id: string): Promise<PaymentView | nu
     payeeName: row.payee_name,
     amountMinor: Number(row.amount_minor),
     currency: row.currency,
-    note: row.note,
+    note: row.note ? await webVault().openField(ctx.planId, "payment_note", row.note, purpose) : "",
     status: row.status,
     releaseAt: row.release_at?.getTime() ?? null,
     createdAt: row.created_at.getTime(),
@@ -186,15 +187,19 @@ export async function createPayment(ctx: Ctx, input: unknown): Promise<CreateRes
 
   // Scam language: keywords always; the AI labeller adds to them when configured.
   let labels: TextLabel[] = keywordLabels(p.note);
-  let labelOutcome: ModelOutcome | null = null;
+  // If the AI reader of the payee's message is down, keywords still apply and
+  // the owner is asked to confirm (REVIEW): money never moves on a payment we
+  // couldn't fully read, but an AI outage doesn't freeze everyone's payments.
+  let textCheckUnavailable = false;
   let labeller = "keywords-1";
   if (p.note && process.env.AI_PROVIDER !== "off" && (process.env.ANTHROPIC_API_KEY || process.env.GEMINI_API_KEY)) {
-    const { labelPaymentText, labelFailureOutcome, providerFromEnv } = await import("@lp/ai");
+    const { labelPaymentText, providerFromEnv } = await import("@lp/ai");
     const r = await labelPaymentText(
       providerFromEnv({
         AI_PROVIDER: process.env.AI_PROVIDER,
         ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
         ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL,
+        ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL,
         GEMINI_API_KEY: process.env.GEMINI_API_KEY,
         GEMINI_MODEL: process.env.GEMINI_MODEL,
       }),
@@ -204,7 +209,7 @@ export async function createPayment(ctx: Ctx, input: unknown): Promise<CreateRes
       labels = [...new Set([...labels, ...r.labels])];
       labeller = `keywords-1+${r.model}`;
     } else {
-      labelOutcome = labelFailureOutcome(r);
+      textCheckUnavailable = true;
     }
   }
 
@@ -216,8 +221,22 @@ export async function createPayment(ctx: Ctx, input: unknown): Promise<CreateRes
     withinRegisteredObligationCap: carer ? paidToCarer + p.amountMinor <= carer.maxPerMonthMinor && p.amountMinor <= carer.amountPerPaymentMinor : true,
   };
   const hourLocal = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone: tz }).format(now)) % 24;
-  const model =
-    labelOutcome ?? (await assessPayment({ payeeId: p.payeeEmail, amountMinor: p.amountMinor, at: now, hourLocal, method: p.method, textLabels: labels, history }));
+  const assessed = await assessPayment({ payeeId: p.payeeEmail, amountMinor: p.amountMinor, at: now, hourLocal, method: p.method, textLabels: labels, history });
+  const model: ModelOutcome =
+    textCheckUnavailable && assessed.status === "OK"
+      ? {
+          status: "OK",
+          signals: [
+            ...assessed.signals,
+            {
+              level: "REVIEW",
+              networkOnly: false,
+              modelVersion: "text-reader",
+              reasons: [{ code: "TEXT_CHECK_UNAVAILABLE", text: "We couldn’t finish reading their message, so please check this payment is right.", source: "SYSTEM" }],
+            },
+          ],
+        }
+      : assessed;
   const decision = decide(evaluateRules(facts), model, {
     payeeIsRegisteredCaregiver: facts.payeeIsRegisteredCaregiver,
     policyVersion: POLICY_VERSION,
@@ -226,12 +245,14 @@ export async function createPayment(ctx: Ctx, input: unknown): Promise<CreateRes
   });
 
   const id = randomUUID();
+  // What the payee wrote is sealed before it's stored (INV-24).
+  const sealedNote = p.note ? await webVault().sealField(ctx.planId, "payment_note", p.note, "owner_view") : "";
   const status: PaymentStatus = decision.level === "PASS" ? "SENT" : decision.level === "REVIEW" ? "CONFIRM_NEEDED" : "PAUSED";
   await tx(async (c) => {
     await c.query(
       `INSERT INTO payments (id, plan_id, payee_name, payee_email, amount_minor, currency, method, note, status, created_at)
        VALUES ($1, $2, $3, $4, $5, 'USD', $6, $7, $8, $9)`,
-      [id, ctx.planId, p.payeeName, p.payeeEmail, p.amountMinor, p.method, p.note, status, now],
+      [id, ctx.planId, p.payeeName, p.payeeEmail, p.amountMinor, p.method, sealedNote, status, now],
     );
     await c.query(
       `INSERT INTO payment_decisions (payment_id, level, reasons, policy_version, model_version, model_status, decided_at)

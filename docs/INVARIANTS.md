@@ -85,7 +85,7 @@ Editing a plan creates a new version. Confirmed versions are never modified. Eve
 ## C. Risk decisions
 
 ### INV-10 — Fail closed
-If the risk service, the AI service or the policy engine is unavailable, times out or returns invalid output, the payment under review is **held**, never passed.
+If the risk service or the policy engine is unavailable, times out or returns invalid output, the payment under review is **held**, never passed. If only the AI reader of the payee's message is unavailable, keyword checks still apply and the owner must confirm the payment (REVIEW) before any money moves: never passed unread, but an AI outage doesn't freeze everyone's payments. (Changed 2026-11-05, see the change log.)
 
 - **Enforced in:** `packages/policy/decide.ts` — the default branch of every decision returns `HOLD` with reason `DEPENDENCY_UNAVAILABLE`.
 - **Verified by:** `INV-10 risk service timeout holds payment`; `INV-10 malformed model output holds payment`.
@@ -172,6 +172,12 @@ When the owner has fewer than 10 past payments, the behaviour model has nothing 
 - **Enforced in:** `packages/policy/src/decide.ts` (`COLD_START_MIN_HISTORY`).
 - **Verified by:** `INV-23 cold start caps behaviour-only model signals at REVIEW`, `INV-23 rules still hold during cold start`.
 
+### INV-24 — A stolen database reveals nothing private
+Payment notes (what scammers wrote to the owner) and plan documents (the people in the plan) are stored in the main database only as ciphertext. Each plan has its own keys, held by a separate vault service with its own database, wrapped by a master key held outside both. The vault releases a key only for a purpose allowed by a fixed table (the worker can never read payment notes), logs every request in an append-only log, and rate-limits each client. Ciphertexts are bound to their plan and kind, so they can't be moved or reinterpreted.
+
+- **Enforced in:** `packages/vault` (service, policy, envelope encryption), `packages/service` and `apps/web/src/server` (fields sealed before they're written).
+- **Verified by:** `INV-24 the main database only ever holds ciphertext, bound to its plan and kind`, `INV-24 the worker can never read what scammers wrote to the owner`, `INV-24 every release, allowed or refused, is logged, and the log can't be edited`, `INV-24 a wrong secret, another client's secret, or an old replayed request is refused`.
+
 ---
 
 ## Change log
@@ -181,3 +187,5 @@ When the owner has fewer than 10 past payments, the behaviour model has nothing 
 | 2026-11-02 | Initial set INV-01 to INV-21 | ADR-0001 to ADR-0005 |
 | 2026-11-04 | Added INV-22 (accounts and sign-in) | — |
 | 2026-11-04 | Added INV-23 (cold start), found in end-to-end testing | — |
+| 2026-11-05 | Added INV-24 (sensitive fields sealed by a separate vault) | ADR-0007 |
+| 2026-11-05 | INV-10: an AI text-reader outage asks the owner (REVIEW) instead of holding; risk-service outages still hold. Found when a model outage held a carer's routine payment. | — |

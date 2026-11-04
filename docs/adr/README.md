@@ -10,3 +10,4 @@ One page per significant decision: the context, the options, the choice and its 
 | [0004](0004-ai-outside-the-money-path.md) | Keep the AI outside the money path | Accepted |
 | [0005](0005-abuse-ring-sentinel.md) | Abuse-ring sentinel as risk-service network features | Accepted |
 | [0006](0006-postgres-instead-of-redis.md) | Postgres instead of Redis for caching, rate limits and webhook de-duplication | Accepted |
+| [0007](0007-sensitive-data-vault.md) | A separate vault service for sensitive fields (envelope encryption, purpose-bound keys) | Accepted |

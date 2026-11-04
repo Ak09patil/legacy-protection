@@ -7,7 +7,7 @@ const nextConfig: NextConfig = {
   // The monorepo root, so Next never guesses from an unrelated lockfile higher up.
   outputFileTracingRoot: path.resolve(__dirname, "../.."),
   // The engine packages are TypeScript source in this monorepo; compile them with the app.
-  transpilePackages: ["@lp/core", "@lp/policy", "@lp/ai", "@lp/db", "@lp/service", "@lp/guard", "@lp/paypal"],
+  transpilePackages: ["@lp/core", "@lp/policy", "@lp/ai", "@lp/db", "@lp/service", "@lp/guard", "@lp/paypal", "@lp/vault"],
   serverExternalPackages: ["pg", "@temporalio/client", "@paypal/agent-toolkit"],
   webpack(config) {
     config.resolve.alias = {
@@ -18,6 +18,7 @@ const nextConfig: NextConfig = {
       "@lp/service$": pkg("service"),
       "@lp/guard$": pkg("guard"),
       "@lp/paypal$": pkg("paypal"),
+      "@lp/vault$": pkg("vault"),
       "@lp/db/audit$": path.resolve(__dirname, "../../packages/db/src/audit.ts"),
     };
     // Source files import siblings with .js extensions (NodeNext style).

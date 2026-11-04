@@ -53,6 +53,9 @@ importers:
       '@lp/service':
         specifier: workspace:*
         version: link:../../packages/service
+      '@lp/vault':
+        specifier: workspace:*
+        version: link:../../packages/vault
       '@paypal/agent-toolkit':
         specifier: 1.11.0
         version: 1.11.0(react@19.1.0)
@@ -204,6 +207,19 @@ importers:
       '@lp/policy':
         specifier: workspace:*
         version: link:../policy
+      '@lp/vault':
+        specifier: workspace:*
+        version: link:../vault
+      pg:
+        specifier: ^8.23.1
+        version: 8.23.1
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.23.1
+        version: 8.23.1
+
+  packages/vault:
+    dependencies:
       pg:
         specifier: ^8.23.1
         version: 8.23.1
@@ -229,6 +245,9 @@ importers:
       '@lp/service':
         specifier: workspace:*
         version: link:../../packages/service
+      '@lp/vault':
+        specifier: workspace:*
+        version: link:../../packages/vault
       '@temporalio/activity':
         specifier: ^1.25.0
         version: 1.25.0(long@5.3.2)(protobufjs@8.8.1)

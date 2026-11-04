@@ -1,0 +1,16 @@
+{
+  "name": "@lp/vault",
+  "version": "0.1.0",
+  "description": "Key custodian for sensitive fields. Holds the keys, never the data; releases a key only for an allowed purpose, and logs every release.",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./src/index.ts", "default": "./dist/index.js" },
+    "./server": { "types": "./src/server.ts", "default": "./dist/server.js" }
+  },
+  "scripts": { "start": "tsx --env-file=../../.env --tsconfig ../../tsconfig.scripts.json src/main.ts" },
+  "dependencies": { "pg": "^8.23.1" },
+  "devDependencies": { "@types/pg": "^8.23.1" }
+}

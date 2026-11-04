@@ -1,1 +1,1 @@
-{ "extends": "../../tsconfig.base.json", "compilerOptions": { "rootDir": "src", "outDir": "dist" }, "include": ["src"], "references": [{ "path": "../core" }, { "path": "../db" }, { "path": "../guard" }, { "path": "../paypal" }, { "path": "../policy" }] }
+{ "extends": "../../tsconfig.base.json", "compilerOptions": { "rootDir": "src", "outDir": "dist" }, "include": ["src"], "references": [{ "path": "../core" }, { "path": "../db" }, { "path": "../guard" }, { "path": "../paypal" }, { "path": "../policy" }, { "path": "../vault" }] }

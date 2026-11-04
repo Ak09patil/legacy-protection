@@ -21,7 +21,9 @@ import { applyEvent, outbox, toLifecycle, type StateRow } from "@lp/service";
 export { applyEvent, outbox };
 import { PlanDocumentSchema, summarisePlan, type PlanDocument } from "@lp/policy";
 import { createInvite, currentUser, type Role, type SessionUser } from "./auth";
+import { openJson, sealJson } from "@lp/vault";
 import { db, tx } from "./db";
+import { webVault } from "./vault";
 
 const HOUR = 3_600_000;
 
@@ -70,7 +72,9 @@ export interface PlanSnapshot {
   nextCheckinAt: number | null;
 }
 
-export async function snapshot(planId: string): Promise<PlanSnapshot> {
+export type ViewPurpose = "owner_view" | "contact_view" | "executor_view";
+
+export async function snapshot(planId: string, purpose: ViewPurpose = "owner_view"): Promise<PlanSnapshot> {
   const q = db();
   const [owner, state, ver, draft, members, invites] = await Promise.all([
     q.query<{ id: string; display_name: string; email: string }>(
@@ -97,7 +101,9 @@ export async function snapshot(planId: string): Promise<PlanSnapshot> {
   if (!o) throw new Error("Plan not found");
   const s = state.rows[0];
   const v = ver.rows[0];
-  const confirmedDoc = v ? PlanDocumentSchema.parse(v.document) : null;
+  const confirmedDoc = v ? PlanDocumentSchema.parse(await openJson(webVault(), planId, "plan_document", v.document, purpose)) : null;
+  // Drafts are the owner's alone.
+  const draftDoc = purpose === "owner_view" && draft.rows[0] ? ((await openJson(webVault(), planId, "plan_document", draft.rows[0].document, "owner_view")) as PlanDocument) : null;
   const person = (role: Role) => {
     const m = members.rows.find((x) => x.role === role);
     if (m) return { name: m.display_name, email: m.email, status: "JOINED" as const };
@@ -116,7 +122,7 @@ export async function snapshot(planId: string): Promise<PlanSnapshot> {
       v && confirmedDoc
         ? { id: v.id, version: v.version, document: confirmedDoc, confirmedAt: v.confirmed_at.getTime(), summary: summarisePlan(confirmedDoc) }
         : null,
-    draft: draft.rows[0] ? (draft.rows[0].document as PlanDocument) : null,
+    draft: draftDoc,
     contact: person("TRUSTED_CONTACT"),
     executor: person("EXECUTOR"),
     nextCheckinAt:
@@ -150,7 +156,7 @@ export async function saveDraft(ctx: Ctx, doc: unknown): Promise<void> {
   await db().query(
     `INSERT INTO plan_drafts (plan_id, document, updated_at) VALUES ($1, $2, now())
      ON CONFLICT (plan_id) DO UPDATE SET document = EXCLUDED.document, updated_at = now()`,
-    [ctx.planId, JSON.stringify(doc)],
+    [ctx.planId, JSON.stringify(await sealJson(webVault(), ctx.planId, "plan_document", doc, "owner_view"))],
   );
 }
 
@@ -184,7 +190,7 @@ export async function confirmPlan(ctx: Ctx, candidate: unknown): Promise<Confirm
     const versionId = randomUUID();
     await c.query(
       `INSERT INTO plan_versions (id, plan_id, version, document, confirmed_at, confirmed_by) VALUES ($1, $2, $3, $4, $5, $6)`,
-      [versionId, ctx.planId, version, JSON.stringify(doc), new Date(now), ctx.user.id],
+      [versionId, ctx.planId, version, JSON.stringify(await sealJson(webVault(), ctx.planId, "plan_document", doc, "confirm")), new Date(now), ctx.user.id],
     );
     const r = await applyEvent(
       c,

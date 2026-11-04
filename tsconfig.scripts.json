@@ -29,6 +29,9 @@
       ],
       "@lp/ai": [
         "packages/ai/src/index.ts"
+      ],
+      "@lp/vault": [
+        "packages/vault/src/index.ts"
       ]
     }
   }

@@ -9,7 +9,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import pg from "pg";
 import { migrate } from "@lp/db";
 import { PlanDocumentSchema, type ExecutionStep } from "@lp/policy";
-import { applyEvent, completeIfAllDone, DryRunExecutor, finishWaitingIfDue, inTx, loadTimeline, markMissedIfDue, pendingSteps, runStep, sendReminder, startExecution, type Executor } from "../src/index.js";
+import { KeyStore, localVault, masterKeyFrom, unsealedDevVault } from "@lp/vault";
+import { migrateVault } from "../../vault/src/migrate.js";
+import { applyEvent, completeIfAllDone, configureVault, DryRunExecutor, finishWaitingIfDue, inTx, loadTimeline, markMissedIfDue, pendingSteps, runStep, sendReminder, startExecution, type Executor } from "../src/index.js";
 
 const ADMIN_URL = process.env.TEST_DATABASE_ADMIN_URL;
 const suite = ADMIN_URL ? describe : describe.skip;
@@ -167,6 +169,39 @@ suite("plan timeline on Postgres", () => {
     expect(ex.ran.filter((r) => r.id.startsWith("pay:")).map((r) => r.id)).toEqual(["pay:maria-care:0", "pay:maria-care:1", "pay:maria-care:2"]);
     const ids = ex.ran.map((r) => r.requestId).filter(Boolean);
     expect(new Set(ids).size).toBe(ids.length); // every money step has its own request id
+  });
+
+  it("INV-24 with a vault configured, executor steps are stored sealed and name no one", async () => {
+    const vaultDb = `${dbName}_v`;
+    await admin.query(`CREATE DATABASE ${vaultDb}`);
+    const vp = new pg.Pool({ connectionString: url(vaultDb), max: 2 });
+    vp.on("error", () => undefined);
+    try {
+      const c = await vp.connect();
+      await migrateVault(c);
+      c.release();
+      configureVault(localVault(new KeyStore(vp, masterKeyFrom("x".repeat(40))), "worker"));
+      const t0 = Date.UTC(2026, 10, 2, 15);
+      const { planId, contact } = await newPlan(t0);
+      const w = (await loadTimeline(pool, planId))!.window!;
+      await markMissedIfDue(pool, planId, w.missedAt + 1);
+      await inTx(pool, (c2) => applyEvent(c2, planId, { type: "CONTACT_CONFIRMED", passkeyVerified: true, at: w.missedAt + HOUR }, contact));
+      const at = w.missedAt + HOUR + 72 * HOUR + 1;
+      await finishWaitingIfDue(pool, planId, at);
+      const ex = new RecordingExecutor();
+      await startExecution(pool, planId, ex, at);
+      const raw = await pool.query<{ step: unknown; label: string }>(`SELECT step, label FROM execution_steps WHERE plan_id = $1`, [planId]);
+      expect(raw.rows.length).toBeGreaterThan(0);
+      for (const r of raw.rows) {
+        expect(JSON.stringify(r)).not.toMatch(/maria|@example\.com/i);
+        expect((r.step as { sealed?: string }).sealed).toMatch(/^lpv1\./);
+      }
+      expect(await runStep(pool, planId, "pay:maria-care:0", ex, at)).toEqual({ outcome: "DONE" });
+    } finally {
+      configureVault(unsealedDevVault());
+      await vp.end();
+      await admin.query(`DROP DATABASE IF EXISTS ${vaultDb} WITH (FORCE)`);
+    }
   });
 
   it("dry run records steps without pretending to send anything", async () => {

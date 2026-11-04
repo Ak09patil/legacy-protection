@@ -19,6 +19,8 @@ export function db(): pg.Pool {
       statement_timeout: 10_000,
       ssl: process.env.DATABASE_SSL === "require" ? { rejectUnauthorized: true } : undefined,
     });
+    // A dropped idle connection (database restart, failover) must not crash the server.
+    g.__lpPool.on("error", (e) => console.error(`[db] idle connection lost: ${e.message}`));
   }
   return g.__lpPool;
 }

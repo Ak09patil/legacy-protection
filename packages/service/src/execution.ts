@@ -8,10 +8,12 @@ import { money, moneyActionKey, type Phase } from "@lp/core";
 import { appendEvent } from "@lp/db/audit";
 import { authorize, type PlannedStep, type ToolCall } from "@lp/guard";
 import { cancelInvoice, cancelSubscription, payCaregiver, type PayPalClient } from "@lp/paypal";
-import { planExecution, PlanDocumentSchema, type ExecutionStep } from "@lp/policy";
+import { planExecution, type ExecutionStep } from "@lp/policy";
 import type pg from "pg";
+import { openJson, sealJson } from "@lp/vault";
 import { applyEvent, type StateRow } from "./lifecycle.js";
-import { inTx } from "./timeline.js";
+import { confirmedPlan, inTx } from "./timeline.js";
+import { serviceVault } from "./vault.js";
 
 /** Where steps actually happen. PayPal in production and sandbox; a dry run when no keys are configured. */
 export interface Executor {
@@ -72,14 +74,15 @@ export class DryRunExecutor implements Executor {
   }
 }
 
-function label(step: ExecutionStep, carerNames: Map<string, string>): string {
+/** Readable in the database without the vault, so it names no people (INV-24). */
+function label(step: ExecutionStep): string {
   switch (step.type) {
     case "CANCEL_SUBSCRIPTION":
-      return `Stop recurring payment ${step.subscriptionId}`;
+      return "Stop a recurring payment";
     case "CANCEL_INVOICE":
-      return `Cancel unpaid invoice ${step.invoiceId}`;
+      return "Cancel an unpaid invoice";
     case "PAY_OBLIGATION":
-      return `Pay ${carerNames.get(step.obligationId) ?? "carer"} ${(step.amountMinor / 100).toLocaleString("en-US", { style: "currency", currency: step.currency })}`;
+      return "Care payment";
     case "ASSEMBLE_EXECUTOR_PACKAGE":
       return "Prepare the executor’s record";
   }
@@ -108,15 +111,15 @@ export async function startExecution(pool: pg.Pool, planId: string, executor: Ex
     if (!row || !row.plan_version_id) return false;
     if (row.phase === "EXECUTING") return true;
     if (row.phase !== "ACTIVATED") return false;
-    const v = await c.query<{ document: unknown }>(`SELECT document FROM plan_versions WHERE id = $1`, [row.plan_version_id]);
-    const plan = PlanDocumentSchema.parse(v.rows[0]!.document);
+    const plan = await confirmedPlan(c, row.plan_version_id);
+    if (!plan) return false;
     const steps = planExecution(plan, snap, now);
-    const names = new Map(plan.obligations.map((o) => [o.id, o.payeeName]));
     for (const st of steps) {
+      const stored = await sealJson(serviceVault(), planId, "plan_document", st, "run_plan");
       await c.query(
         `INSERT INTO execution_steps (id, plan_id, plan_version_id, step, label, due_at, status, paypal_request_id)
          VALUES ($1, $2, $3, $4, $5, $6, 'SCHEDULED', $7) ON CONFLICT DO NOTHING`,
-        [st.id, planId, row.plan_version_id, JSON.stringify(st), label(st, names), new Date(st.type === "PAY_OBLIGATION" ? st.dueAt : now), moneyActionKey(row.plan_version_id, st.id)],
+        [st.id, planId, row.plan_version_id, JSON.stringify(stored), label(st), new Date(st.type === "PAY_OBLIGATION" ? st.dueAt : now), moneyActionKey(row.plan_version_id, st.id)],
       );
     }
     await applyEvent(c, planId, { type: "EXECUTION_STARTED", at: now }, "executor", { steps: steps.length, executor: executor.name });
@@ -140,12 +143,15 @@ export async function pendingSteps(pool: pg.Pool, planId: string): Promise<Array
 export async function runStep(pool: pg.Pool, planId: string, stepId: string, executor: Executor, now = Date.now()): Promise<{ outcome: "DONE" | "REFUSED" | "SKIPPED"; detail?: string }> {
   const [state, rows] = await Promise.all([
     pool.query<{ phase: Phase; plan_version_id: string | null }>(`SELECT phase, plan_version_id FROM plan_state WHERE plan_id = $1`, [planId]),
-    pool.query<{ id: string; step: ExecutionStep; status: string }>(`SELECT id, step, status FROM execution_steps WHERE plan_id = $1`, [planId]),
+    pool.query<{ id: string; step: unknown; status: string }>(`SELECT id, step, status FROM execution_steps WHERE plan_id = $1`, [planId]),
   ]);
+  const opened = await Promise.all(
+    rows.rows.map(async (r) => ({ id: r.id, status: r.status, step: (await openJson(serviceVault(), planId, "plan_document", r.step, "run_plan")) as ExecutionStep })),
+  );
   const st = state.rows[0];
-  const target = rows.rows.find((r) => r.id === stepId);
+  const target = opened.find((r) => r.id === stepId);
   if (!st || !target || target.status === "DONE" || target.status === "SKIPPED") return { outcome: "SKIPPED" };
-  const planned: PlannedStep[] = rows.rows.map((r) => ({ step: r.step, done: r.status === "DONE" }));
+  const planned: PlannedStep[] = opened.map((r) => ({ step: r.step, done: r.status === "DONE" }));
 
   let requestId = "";
   const call = toolCallFor(target.step);
