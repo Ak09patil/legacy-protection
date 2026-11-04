@@ -3,7 +3,7 @@
 import type { AuthenticationResponseJSON } from "@simplewebauthn/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { beginStepUp, finishStepUp } from "@/server/auth";
+import { beginStepUp, beginStepUpWithCode, finishStepUp, finishStepUpWithCode, hasPasskey } from "@/server/auth";
 import { tx } from "@/server/db";
 import { actOnPayment, type PaymentAction } from "@/server/payments";
 import { applyEvent, checkIn, confirmPlan, inviteExecutor, reissueInvite, requireRole, saveDraft } from "@/server/plans";
@@ -39,23 +39,38 @@ export async function inviteExecutorAction(name: string, email: string) {
   return r;
 }
 
-/** Step 1 of "something has happened": ask the contact's own passkey for a fresh check. */
-export async function beginContactConfirmAction() {
+/**
+ * Step 1 of "something has happened": a fresh check that it's really the
+ * contact. A passkey if they have one; otherwise a one-time code to their email.
+ */
+export async function beginContactConfirmAction(): Promise<
+  | { method: "passkey"; challengeId: string; options: Awaited<ReturnType<typeof beginStepUp>>["options"] }
+  | { method: "code"; codeId: string; email: string }
+  | { method: "error"; message: string }
+> {
   const ctx = await requireRole("TRUSTED_CONTACT");
-  return beginStepUp(ctx.user.id, `CONTACT_CONFIRMED:${ctx.planId}`);
+  const action = `CONTACT_CONFIRMED:${ctx.planId}`;
+  if (await hasPasskey(ctx.user.id)) return { method: "passkey", ...(await beginStepUp(ctx.user.id, action)) };
+  const r = await beginStepUpWithCode(ctx.user, action);
+  return r.ok ? { method: "code", codeId: r.value.codeId, email: ctx.user.email } : { method: "error", message: r.message };
 }
 
 /**
- * Step 2: verified on the server. The state machine refuses any confirmation
- * not backed by a passkey check (THREAT_MODEL T1), and the owner is told at
- * once on every channel.
+ * Step 2, verified on the server. The state machine refuses any confirmation
+ * not backed by a fresh check (THREAT_MODEL T1), and the owner is told at once.
  */
-export async function finishContactConfirmAction(challengeId: string, response: AuthenticationResponseJSON): Promise<{ ok: boolean; message?: string }> {
+export async function finishContactConfirmAction(
+  proof: { method: "passkey"; challengeId: string; response: AuthenticationResponseJSON } | { method: "code"; codeId: string; code: string },
+): Promise<{ ok: boolean; message?: string }> {
   const ctx = await requireRole("TRUSTED_CONTACT");
+  const action = `CONTACT_CONFIRMED:${ctx.planId}`;
   const r = await tx(async (c) => {
-    const verified = await finishStepUp(c, ctx.user.id, challengeId, `CONTACT_CONFIRMED:${ctx.planId}`, response);
-    if (!verified) return { ok: false, message: "We couldn’t verify your passkey, so nothing has changed." };
-    const applied = await applyEvent(c, ctx.planId, { type: "CONTACT_CONFIRMED", passkeyVerified: true, at: Date.now() }, ctx.user.id, {});
+    const verified =
+      proof.method === "passkey"
+        ? await finishStepUp(c, ctx.user.id, proof.challengeId, action, proof.response)
+        : await finishStepUpWithCode(c, ctx.user.id, proof.codeId, proof.code, action);
+    if (!verified) return { ok: false, message: proof.method === "passkey" ? "We couldn’t verify your passkey, so nothing has changed." : "That code isn’t right, or it has expired." };
+    const applied = await applyEvent(c, ctx.planId, { type: "CONTACT_CONFIRMED", passkeyVerified: true, at: Date.now() }, ctx.user.id, { verifiedBy: proof.method });
     if (applied.rejected) return { ok: false, message: "There’s nothing to confirm right now." };
     return { ok: true };
   });

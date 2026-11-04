@@ -44,7 +44,7 @@ const shot = (p, n) => p.screenshot({ path: `${require('os').tmpdir()}/lp-e2e-${
   await shot(P, '4-contact');
   await P.getByText('If something has happened to Eleanor').click();
   await P.getByRole('button', { name: 'I know something has happened' }).click();
-  await P.getByRole('button', { name: 'Confirm with my passkey' }).click();
+  await P.getByRole('button', { name: 'Confirm it’s me' }).click();
   await P.getByRole('heading', { name: 'We’ve told Eleanor' }).waitFor({ timeout: 10000 });
   await shot(P, '5-contact-confirmed');
 

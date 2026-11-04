@@ -2,7 +2,18 @@
 
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from "@simplewebauthn/server";
 import { redirect } from "next/navigation";
-import { beginSignIn, beginSignUp, finishSignIn, finishSignUp, signOut, type Role } from "@/server/auth";
+import {
+  beginSignIn,
+  beginSignInWithCode,
+  beginSignUp,
+  beginSignUpWithCode,
+  finishSignIn,
+  finishSignInWithCode,
+  finishSignUp,
+  finishSignUpWithCode,
+  signOut,
+  type Role,
+} from "@/server/auth";
 
 export async function beginSignUpAction(input: { name: string; email: string; inviteToken?: string }) {
   return beginSignUp(input);
@@ -12,6 +23,26 @@ export async function finishSignUpAction(challengeId: string, response: Registra
   const r = await finishSignUp(challengeId, response);
   if (!r.ok) return r;
   redirect(homeFor(r.value.role));
+}
+
+export async function beginSignUpWithCodeAction(input: { name: string; email: string; inviteToken?: string }) {
+  return beginSignUpWithCode(input);
+}
+
+export async function finishSignUpWithCodeAction(codeId: string, code: string) {
+  const r = await finishSignUpWithCode(codeId, code);
+  if (!r.ok) return r;
+  redirect(homeFor(r.value.role));
+}
+
+export async function beginSignInWithCodeAction(email: string) {
+  return beginSignInWithCode(email);
+}
+
+export async function finishSignInWithCodeAction(codeId: string, code: string) {
+  const r = await finishSignInWithCode(codeId, code);
+  if (!r.ok) return r;
+  redirect("/home");
 }
 
 export async function beginSignInAction() {

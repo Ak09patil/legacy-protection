@@ -6,7 +6,7 @@ import "server-only";
  * only from memberships created through the owner's invite.
  */
 
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import { cookies, headers } from "next/headers";
 import {
   generateAuthenticationOptions,
@@ -22,6 +22,7 @@ import {
 import { appendEvent } from "@lp/db/audit";
 import { z } from "zod";
 import { db, tx, type Tx } from "./db";
+import { sendEmail } from "./mail";
 
 const SESSION_COOKIE = "lp_session";
 const SESSION_DAYS = 30;
@@ -112,6 +113,27 @@ async function storeChallenge(purpose: "register" | "authenticate" | "confirm", 
   return id;
 }
 
+interface PendingAccount {
+  userId: string;
+  name: string;
+  email: string;
+  inviteToken?: string;
+}
+
+/** After the person is created: either accept their invite, or give them their own plan. */
+async function setUpAccount(c: Tx, pending: PendingAccount): Promise<Role> {
+  if (pending.inviteToken) {
+    const accepted = await acceptInvite(c, pending.inviteToken, pending.userId);
+    if (!accepted) throw new Error("INVITE_GONE");
+    return accepted;
+  }
+  const planId = randomUUID();
+  await c.query(`INSERT INTO plans (id, owner_id) VALUES ($1, $2)`, [planId, pending.userId]);
+  await c.query(`INSERT INTO memberships (plan_id, user_id, role) VALUES ($1, $2, 'OWNER')`, [planId, pending.userId]);
+  await appendEvent(c, { planId, at: new Date(), kind: "ACCOUNT_CREATED", actor: pending.userId, payload: { role: "OWNER" } });
+  return "OWNER";
+}
+
 async function consumeChallenge(c: Tx, id: string, purpose: string) {
   const r = await c.query<{ challenge: string; user_id: string | null; pending: unknown }>(
     `DELETE FROM auth_challenges WHERE id = $1 AND purpose = $2 AND expires_at > now() RETURNING challenge, user_id, pending`,
@@ -164,7 +186,7 @@ export async function finishSignUp(challengeId: string, response: RegistrationRe
     return await tx(async (c) => {
       const ch = await consumeChallenge(c, challengeId, "register");
       if (!ch) return { ok: false as const, message: "That took too long. Please try again." };
-      const pending = ch.pending as { userId: string; name: string; email: string; inviteToken?: string };
+      const pending = ch.pending as PendingAccount;
       const v = await verifyRegistrationResponse({
         response,
         expectedChallenge: ch.challenge,
@@ -180,18 +202,7 @@ export async function finishSignUp(challengeId: string, response: RegistrationRe
         `INSERT INTO passkeys (id, user_id, public_key, counter, transports, device_type, backed_up) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [credential.id, pending.userId, Buffer.from(credential.publicKey), credential.counter, credential.transports ?? [], credentialDeviceType, credentialBackedUp],
       );
-
-      let role: Role = "OWNER";
-      if (pending.inviteToken) {
-        const accepted = await acceptInvite(c, pending.inviteToken, pending.userId);
-        if (!accepted) throw new Error("INVITE_GONE");
-        role = accepted;
-      } else {
-        const planId = randomUUID();
-        await c.query(`INSERT INTO plans (id, owner_id) VALUES ($1, $2)`, [planId, pending.userId]);
-        await c.query(`INSERT INTO memberships (plan_id, user_id, role) VALUES ($1, $2, 'OWNER')`, [planId, pending.userId]);
-        await appendEvent(c, { planId, at: new Date(), kind: "ACCOUNT_CREATED", actor: pending.userId, payload: { role: "OWNER" } });
-      }
+      const role = await setUpAccount(c, pending);
       await createSession(c, pending.userId);
       return { ok: true as const, value: { role } };
     });
@@ -314,4 +325,116 @@ async function acceptInvite(c: Tx, t: string, userId: string): Promise<Role | nu
 /** Signed-in person accepting an invite with their existing account. */
 export async function acceptInviteAsUser(t: string, userId: string): Promise<Role | null> {
   return tx((c) => acceptInvite(c, t, userId));
+}
+
+// ---------------------------------------------------------------------------
+// Email codes: the fallback for people who can't use passkeys
+// ---------------------------------------------------------------------------
+
+const CODE_TTL_MS = 10 * 60_000;
+const CODE_MAX_ATTEMPTS = 5;
+const CODES_PER_15_MIN = 3;
+
+function codeHmac(id: string, code: string): string {
+  const secret = process.env.APP_SECRET;
+  if (!secret) throw new Error("APP_SECRET is not set");
+  return createHmac("sha256", secret).update(`${id}:${code}`).digest("hex");
+}
+
+async function issueCode(purpose: "signup" | "signin" | "confirm", email: string, pending: unknown, deliver: boolean): Promise<Result<{ codeId: string }>> {
+  const recent = await db().query<{ n: string }>(
+    `SELECT count(*) AS n FROM email_codes WHERE lower(email) = $1 AND created_at > now() - interval '15 minutes'`,
+    [email],
+  );
+  if (Number(recent.rows[0]?.n ?? 0) >= CODES_PER_15_MIN) return { ok: false, message: "Too many codes requested. Please wait a few minutes." };
+  const id = randomUUID();
+  const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+  await db().query(
+    `INSERT INTO email_codes (id, email, purpose, code_hmac, pending, expires_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+    [id, email, purpose, codeHmac(id, code), pending === undefined ? null : JSON.stringify(pending), new Date(Date.now() + CODE_TTL_MS)],
+  );
+  if (deliver) {
+    await sendEmail(email, `Your Legacy Protection code: ${code}`, `Your code is ${code}. It works once, for 10 minutes.\n\nIf you didn’t ask for this, you can ignore this email. Nobody can use it without your email inbox.`);
+  }
+  return { ok: true, value: { codeId: id } };
+}
+
+async function redeemCode(c: Tx, id: string, code: string, purpose: string): Promise<{ email: string; pending: unknown } | null> {
+  const r = await c.query<{ email: string; purpose: string; code_hmac: string; pending: unknown; attempts: number; expires_at: Date; consumed_at: Date | null }>(
+    `SELECT email, purpose, code_hmac, pending, attempts, expires_at, consumed_at FROM email_codes WHERE id = $1 FOR UPDATE`,
+    [id],
+  );
+  const row = r.rows[0];
+  if (!row || row.purpose !== purpose || row.consumed_at || row.expires_at.getTime() < Date.now() || row.attempts >= CODE_MAX_ATTEMPTS) return null;
+  const want = Buffer.from(row.code_hmac, "hex");
+  const got = Buffer.from(codeHmac(id, code.replace(/\D/g, "").slice(0, 6)), "hex");
+  if (want.length !== got.length || !timingSafeEqual(want, got)) {
+    await c.query(`UPDATE email_codes SET attempts = attempts + 1 WHERE id = $1`, [id]);
+    return null;
+  }
+  await c.query(`UPDATE email_codes SET consumed_at = now() WHERE id = $1`, [id]);
+  return { email: row.email, pending: row.pending };
+}
+
+export async function beginSignUpWithCode(input: unknown): Promise<Result<{ codeId: string }>> {
+  const p = SignUp.safeParse(input);
+  if (!p.success) return { ok: false, message: p.error.issues[0]?.message ?? "Please check your details." };
+  const { name, email, inviteToken } = p.data;
+  if (inviteToken && !(await openInvite(inviteToken))) return { ok: false, message: "This invitation has expired or was already used. Ask for a new one." };
+  const exists = await db().query(`SELECT 1 FROM users WHERE lower(email) = $1`, [email]);
+  if (exists.rowCount) return { ok: false, message: "There’s already an account with this email. Sign in instead." };
+  return issueCode("signup", email, { userId: randomUUID(), name, email, inviteToken } satisfies PendingAccount, true);
+}
+
+export async function finishSignUpWithCode(codeId: string, code: string): Promise<Result<{ role: Role }>> {
+  try {
+    return await tx(async (c) => {
+      const ok = await redeemCode(c, codeId, code, "signup");
+      if (!ok) return { ok: false as const, message: "That code isn’t right, or it has expired." };
+      const pending = ok.pending as PendingAccount;
+      await c.query(`INSERT INTO users (id, email, display_name) VALUES ($1, $2, $3)`, [pending.userId, pending.email, pending.name]);
+      const role = await setUpAccount(c, pending);
+      await createSession(c, pending.userId);
+      return { ok: true as const, value: { role } };
+    });
+  } catch (e) {
+    if (e instanceof Error && e.message === "INVITE_GONE") return { ok: false, message: "This invitation has expired or was already used." };
+    if (e instanceof Error && /duplicate key/.test(e.message)) return { ok: false, message: "There’s already an account with this email. Sign in instead." };
+    throw e;
+  }
+}
+
+/** Always answers the same way, so it can't be used to find out who has an account. */
+export async function beginSignInWithCode(emailInput: string): Promise<Result<{ codeId: string }>> {
+  const email = emailInput.trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { ok: false, message: "Please enter a valid email address." };
+  const exists = await db().query(`SELECT 1 FROM users WHERE lower(email) = $1`, [email]);
+  return issueCode("signin", email, undefined, (exists.rowCount ?? 0) > 0);
+}
+
+export async function finishSignInWithCode(codeId: string, code: string): Promise<Result<null>> {
+  return tx(async (c) => {
+    const ok = await redeemCode(c, codeId, code, "signin");
+    if (!ok) return { ok: false as const, message: "That code isn’t right, or it has expired." };
+    const u = await c.query<{ id: string }>(`SELECT id FROM users WHERE lower(email) = $1`, [ok.email]);
+    if (!u.rows[0]) return { ok: false as const, message: "That code isn’t right, or it has expired." };
+    await createSession(c, u.rows[0].id);
+    return { ok: true as const, value: null };
+  });
+}
+
+/** Step-up by email code, for people without a passkey. Weaker than a passkey; documented in THREAT_MODEL T1. */
+export async function beginStepUpWithCode(user: { id: string; email: string }, action: string): Promise<Result<{ codeId: string }>> {
+  return issueCode("confirm", user.email.toLowerCase(), { userId: user.id, action }, true);
+}
+
+export async function finishStepUpWithCode(c: Tx, userId: string, codeId: string, code: string, action: string): Promise<boolean> {
+  const ok = await redeemCode(c, codeId, code, "confirm");
+  const p = ok?.pending as { userId?: string; action?: string } | undefined;
+  return !!ok && p?.userId === userId && p?.action === action;
+}
+
+export async function hasPasskey(userId: string): Promise<boolean> {
+  const r = await db().query(`SELECT 1 FROM passkeys WHERE user_id = $1 LIMIT 1`, [userId]);
+  return (r.rowCount ?? 0) > 0;
 }

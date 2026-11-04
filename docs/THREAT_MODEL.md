@@ -88,3 +88,13 @@ The most important lesson from real-world elder financial abuse: **the most dang
 ## Review
 
 This model is reviewed whenever an invariant changes or a new money action is added.
+
+
+## Addendum (2026-11-04): email codes as a fallback to passkeys
+
+Some people can't create passkeys (for example, a Mac with iCloud Keychain switched off). They can sign up, sign in, and, as a trusted contact, confirm "something has happened" with a one-time email code instead.
+
+- **Weaker than a passkey for T1 (false trigger):** anyone with access to the contact's inbox can confirm. Mitigations are unchanged and still decisive: the owner is told at once, the plan waits at least 72 hours, and one check-in from the owner cancels everything.
+- **Codes:** 6 digits, stored only as an HMAC keyed by APP_SECRET, single use, 10-minute expiry, 5 wrong guesses at most, 3 codes per email per 15 minutes.
+- **No account discovery:** asking for a sign-in code answers the same way whether or not the email has an account.
+- The audit log records which method was used (`verifiedBy`).

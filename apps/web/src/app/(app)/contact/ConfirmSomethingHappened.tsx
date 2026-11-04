@@ -16,19 +16,41 @@ export function ConfirmSomethingHappened({ ownerName, waitingDays }: { ownerName
   const [pending, start] = useTransition();
   const router = useRouter();
 
+  const [codeId, setCodeId] = useState<string | null>(null);
+  const [sentTo, setSentTo] = useState("");
+  const [code, setCode] = useState("");
+
+  const done = (r: { ok: boolean; message?: string }) => {
+    if (!r.ok) setError(r.message ?? "Nothing has changed.");
+    else router.refresh();
+  };
+
   const confirm = () =>
     start(async () => {
       setError(null);
       try {
         const begun = await beginContactConfirmAction();
+        if (begun.method === "error") return setError(begun.message);
+        if (begun.method === "code") {
+          setCodeId(begun.codeId);
+          setSentTo(begun.email);
+          return;
+        }
         const response = await startAuthentication({ optionsJSON: begun.options });
-        const r = await finishContactConfirmAction(begun.challengeId, response);
-        if (!r.ok) setError(r.message ?? "Nothing has changed.");
-        else router.refresh();
+        done(await finishContactConfirmAction({ method: "passkey", challengeId: begun.challengeId, response }));
       } catch {
-        setError("The passkey check didn’t finish, so nothing has changed.");
+        setError("The check didn’t finish, so nothing has changed.");
       }
     });
+
+  const submitCode = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!codeId) return;
+    start(async () => {
+      setError(null);
+      done(await finishContactConfirmAction({ method: "code", codeId, code }));
+    });
+  };
 
   if (!open) {
     return (
@@ -48,9 +70,29 @@ export function ConfirmSomethingHappened({ ownerName, waitingDays }: { ownerName
         <li>Nothing happens for at least {waitingDays} days. Any sign of them stops it.</li>
         <li>You won’t be able to move or receive any of their money.</li>
       </ul>
-      <button type="button" disabled={pending} onClick={confirm} className={`${buttonStyles.primary} mt-4`}>
-        {pending ? "Checking your passkey…" : "Confirm with my passkey"}
-      </button>
+      {codeId ? (
+        <form onSubmit={submitCode} className="mt-4 space-y-3">
+          <label className="block text-[16px] font-semibold">
+            Enter the code we sent to {sentTo}
+            <input
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={7}
+              required
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              className="mt-1.5 w-full rounded-2xl bg-white px-4 py-3 text-center font-mono text-[1.4rem] tracking-[0.4em] shadow-[inset_0_0_0_1.5px_rgba(16,36,27,0.12)]"
+            />
+          </label>
+          <button type="submit" disabled={pending} className={buttonStyles.primary}>
+            Confirm
+          </button>
+        </form>
+      ) : (
+        <button type="button" disabled={pending} onClick={confirm} className={`${buttonStyles.primary} mt-4`}>
+          {pending ? "Checking it’s you…" : "Confirm it’s me"}
+        </button>
+      )}
       <button type="button" onClick={() => setOpen(false)} className={`${buttonStyles.quiet} mt-4 block w-full text-center`}>
         Not now, I’ll keep trying to reach them
       </button>
