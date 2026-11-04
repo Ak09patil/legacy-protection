@@ -10,7 +10,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
   const date = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(v.confirmedAt);
 
   return (
-    <div className="space-y-5 pt-2">
+    <div className="mx-auto max-w-[34rem] space-y-5 pt-2">
       <Link href="/home" className="inline-block text-[16px] font-semibold text-green">
         Back home
       </Link>

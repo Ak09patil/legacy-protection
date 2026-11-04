@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export default function EditPlanPage() {
   const v = planView();
   return (
-    <div className="space-y-5 pt-2">
+    <div className="mx-auto max-w-[34rem] space-y-5 pt-2">
       <Link href="/plan" className="inline-block text-[16px] font-semibold text-green">
         Back to your plan
       </Link>

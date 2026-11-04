@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 function Action({ id, action, label, variant }: { id: string; action: string; label: string; variant: keyof typeof buttonStyles }) {
   return (
-    <form action={paymentAction}>
+    <form action={paymentAction} className="mx-auto max-w-[34rem]">
       <input type="hidden" name="id" value={id} />
       <input type="hidden" name="action" value={action} />
       <button type="submit" className={buttonStyles[variant]}>

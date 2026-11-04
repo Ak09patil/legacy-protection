@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { checkInAction } from "../actions";
 import { buttonStyles } from "@/components/app/ui";
 
-export function CheckInButton() {
+export function CheckInButton({ label = "I’m here", hint = "One tap lets us know you’re well." }: { label?: string; hint?: string }) {
   const [pending, start] = useTransition();
   const [done, setDone] = useState(false);
   return (
@@ -20,10 +20,10 @@ export function CheckInButton() {
           })
         }
       >
-        {pending ? "Checking in…" : "I’m here"}
+        {pending ? "Checking in…" : label}
       </button>
       <p role="status" className="mt-3 min-h-[1.5em] text-[15px] text-ink-soft">
-        {done ? "Thanks, you’re checked in. See you next week." : "One tap lets us know you’re well."}
+        {done ? "Thanks, you’re checked in. See you next week." : hint}
       </p>
     </div>
   );

@@ -2,11 +2,27 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { actOnPayment, checkIn, confirmPlan, previewPlan, type PaymentAction } from "@/server/world";
+import {
+  actOnPayment,
+  checkIn,
+  confirmPlan,
+  contactConfirm,
+  previewPlan,
+  resetWorld,
+  storyFinishWaiting,
+  storyMissCheckins,
+  type PaymentAction,
+} from "@/server/world";
+
+const ALL = ["/home", "/plan", "/contact", "/executor", "/ops"];
+function refreshAll() {
+  for (const p of ALL) revalidatePath(p);
+  revalidatePath("/payments/[id]", "page");
+}
 
 export async function checkInAction(): Promise<void> {
   checkIn();
-  revalidatePath("/home");
+  refreshAll();
 }
 
 const ACTIONS: readonly PaymentAction[] = ["stop", "ask-contact", "send-anyway", "cancel-release"];
@@ -58,4 +74,21 @@ export async function draftFromWordsAction(words: string, timeZone: string): Pro
   const r = await draftPlan(provider, words.slice(0, 4000), timeZone);
   if (!r.ok) return { ok: false, reason: r.reason, issues: r.issues };
   return { ok: true, plan: r.plan };
+}
+
+export async function contactConfirmAction(passkeyVerified: boolean): Promise<{ ok: boolean; reason?: string }> {
+  const r = contactConfirm(passkeyVerified);
+  refreshAll();
+  return r ? { ok: false, reason: r } : { ok: true };
+}
+
+/** Judge mode: move the story forward one step, or start again. */
+export async function storyAction(step: "missed" | "confirm" | "wait" | "reset"): Promise<{ ok: boolean; reason?: string }> {
+  let r: string | null = null;
+  if (step === "missed") r = storyMissCheckins();
+  else if (step === "confirm") r = contactConfirm(true);
+  else if (step === "wait") r = storyFinishWaiting();
+  else resetWorld();
+  refreshAll();
+  return r ? { ok: false, reason: r } : { ok: true };
 }

@@ -31,9 +31,52 @@ function statusFor(p: ReturnType<typeof home>["recent"][number]) {
 export default function HomePage() {
   const h = home();
   const attention = h.needsAttention[0];
+  const started = h.phase === "EXECUTING" || h.phase === "COMPLETED" || h.phase === "ACTIVATED";
+  const someoneWorried = !started && (h.phase === "WAITING" || h.checkinsMissed);
+
+  if (started) {
+    return (
+      <div className="mx-auto max-w-[34rem] space-y-5 pt-4 text-center">
+        <BreathingRings size={170} />
+        <Heading className="text-[clamp(2rem,7vw,2.6rem)]">Eleanor’s plan has started</Heading>
+        <p className="text-[17px] text-ink-soft">
+          Everything is happening exactly as she confirmed it. Her balance is safe for her estate, and {h.contact.name} and her executor have been told.
+        </p>
+        <p>
+          <Link href="/executor" className="text-[17px] font-semibold text-green underline decoration-mint decoration-2 underline-offset-[6px]">
+            See what was done
+          </Link>
+        </p>
+      </div>
+    );
+  }
+
+  if (someoneWorried) {
+    return (
+      <div className="mx-auto max-w-[34rem] space-y-5">
+        <div className="pt-4 text-center">
+          <BreathingRings size={190} paused />
+          <Heading className="mt-5 text-[clamp(2rem,7vw,2.6rem)]">Are you all right, {h.owner.firstName}?</Heading>
+        </div>
+        <div className="rounded-[2rem] bg-[#FDF3E3]/90 p-6 shadow-[0_24px_60px_-38px_rgba(107,63,6,0.45)] backdrop-blur-2xl">
+          {h.waitingEndsAt ? (
+            <p className="text-[17px] leading-[1.55]">
+              {h.contact.name} told us something may have happened to you. If we don’t hear from you by{" "}
+              <strong className="font-semibold">{when(h.waitingEndsAt, h.timeZone)}</strong>, your plan will start.
+            </p>
+          ) : (
+            <p className="text-[17px] leading-[1.55]">
+              You missed your check-in, so we’ve asked {h.contact.name} to look in on you.
+            </p>
+          )}
+        </div>
+        <CheckInButton label="I’m here, I’m all right" hint={`One tap and nothing happens. We’ll let ${h.contact.name} know you’re well.`} />
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-5">
+    <div className="mx-auto max-w-[34rem] space-y-5">
       <div className="pt-4 text-center">
         <BreathingRings size={190} paused={!!attention} />
         <Heading className="mt-5 text-[clamp(2rem,7vw,2.6rem)]">

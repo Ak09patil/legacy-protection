@@ -1,6 +1,19 @@
 import Link from "next/link";
 import { RingsMark } from "@/components/RingsMark";
 import { PersonaSwitch } from "@/components/app/PersonaSwitch";
+import { StoryControls } from "@/components/app/StoryControls";
+import { story } from "@/server/world";
+
+export const dynamic = "force-dynamic";
+
+function storyProps() {
+  const s = story();
+  return {
+    phase: s.phase,
+    checkinsMissed: s.checkinsMissed,
+    storyTime: new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: s.timeZone }).format(s.now),
+  };
+}
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -18,7 +31,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </Link>
           <PersonaSwitch />
         </header>
-        <main className="mx-auto max-w-[34rem] px-5 pb-20 pt-2 sm:px-8">{children}</main>
+        <main className="mx-auto max-w-[64rem] px-5 pb-32 pt-2 sm:px-8">{children}</main>
+        <StoryControls {...storyProps()} />
       </div>
     </>
   );
