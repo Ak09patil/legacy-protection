@@ -20,6 +20,6 @@
     "@types/pg": "^8.23.1"
   },
   "scripts": {
-    "start": "tsx --env-file=../../.env src/worker.ts"
+    "start": "tsx --env-file=../../.env --tsconfig ../../tsconfig.scripts.json src/worker.ts"
   }
 }
