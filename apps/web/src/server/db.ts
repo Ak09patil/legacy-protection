@@ -1,5 +1,6 @@
 import "server-only";
 import pg from "pg";
+import { appDatabaseUrl } from "@lp/db/url";
 
 /**
  * One pool per server process, connected as the least-privilege app role
@@ -10,8 +11,7 @@ const g = globalThis as unknown as { __lpPool?: pg.Pool };
 
 export function db(): pg.Pool {
   if (!g.__lpPool) {
-    const connectionString = process.env.DATABASE_URL;
-    if (!connectionString) throw new Error("DATABASE_URL is not set");
+    const connectionString = appDatabaseUrl();
     g.__lpPool = new pg.Pool({
       connectionString,
       max: Number(process.env.DATABASE_POOL_MAX ?? 10),

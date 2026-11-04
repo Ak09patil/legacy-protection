@@ -1,0 +1,293 @@
+/**
+ * The web app's server code (sign-in, invites, plans, payments) against a
+ * real Postgres, with Next.js replaced by small shims. Each person signs in
+ * with an email code read from the dev mailer, the way a real user would.
+ */
+import { randomUUID } from "node:crypto";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import pg from "pg";
+import { migrate } from "@lp/db";
+import { PlanDocumentSchema, type PlanDocument } from "@lp/policy";
+import { testCookies } from "./shims/next-headers";
+
+const ADMIN_URL = process.env.TEST_DATABASE_ADMIN_URL;
+const suite = ADMIN_URL ? describe : describe.skip;
+const PW = "lp_app_test_only";
+const dbName = `lp_web_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
+let admin: pg.Client;
+let riskServer: Server;
+let riskMode: "pass" | "hold" | "down" = "pass";
+
+// Loaded after the environment is set, so the app's db() pool points at the test database.
+let auth: typeof import("../src/server/auth");
+let plans: typeof import("../src/server/plans");
+let payments: typeof import("../src/server/payments");
+let db: typeof import("../src/server/db");
+
+const sentCodes: string[] = [];
+const sentTo: string[] = [];
+
+const url = (database: string, user?: string) => {
+  const u = new URL(ADMIN_URL!);
+  u.pathname = `/${database}`;
+  if (user) {
+    u.username = user;
+    u.password = PW;
+  }
+  return u.toString();
+};
+
+/** Signs up with an email code and returns that person's session cookie. */
+async function signUp(name: string, email: string, inviteToken?: string): Promise<string> {
+  testCookies.clear();
+  const begun = await auth.beginSignUpWithCode({ name, email, inviteToken });
+  if (!begun.ok) throw new Error(begun.message);
+  const r = await auth.finishSignUpWithCode(begun.value.codeId, sentCodes.at(-1)!);
+  if (!r.ok) throw new Error(r.message);
+  return testCookies.get("lp_session")!;
+}
+
+function as(session: string) {
+  testCookies.clear();
+  testCookies.set("lp_session", session);
+}
+
+const planFor = (contactEmail: string): PlanDocument =>
+  PlanDocumentSchema.parse({
+    schemaVersion: 1,
+    trustedContact: { name: "Priya", email: contactEmail },
+    checkin: { timeZone: "America/New_York", intervalDays: 7, localHour: 10, localMinute: 0 },
+    waitingPeriodHours: 72,
+    obligations: [
+      {
+        id: "maria-care",
+        kind: "HOUSEHOLD_EMPLOYEE",
+        payeeName: "Maria",
+        payeeEmail: "maria@example.com",
+        description: "home care",
+        amountPerPaymentMinor: 32000,
+        maxPerMonthMinor: 140000,
+        currency: "USD",
+        cadence: "WEEKLY",
+        continueForDaysAfterActivation: 60,
+      },
+    ],
+    onActivation: { cancelSubscriptions: true, cancelOpenInvoices: true, holdBalanceForEstate: true },
+    contentVisibleTo: [],
+  });
+
+suite("web server", () => {
+  beforeAll(async () => {
+    admin = new pg.Client({ connectionString: ADMIN_URL });
+    await admin.connect();
+    await admin.query(`CREATE DATABASE ${dbName}`);
+    const o = new pg.Client({ connectionString: url(dbName) });
+    await o.connect();
+    await migrate(o, PW);
+    await o.end();
+
+    // A stand-in risk service the test can switch between answers.
+    riskServer = createServer((req, res) => {
+      if (riskMode === "down") {
+        res.writeHead(503).end();
+        return;
+      }
+      const hold = riskMode === "hold";
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          level: hold ? "HOLD" : "PASS",
+          reasons: hold ? [{ code: "SCAM_LANGUAGE", text: "The payment note uses language common in scams.", source: "MODEL" }] : [],
+          networkOnly: req.url === "/v1/network/payee",
+          modelVersion: "test",
+        }),
+      );
+    });
+    await new Promise<void>((r) => riskServer.listen(0, "127.0.0.1", () => r()));
+
+    Object.assign(process.env, {
+      DATABASE_URL: url(dbName, "lp_app"),
+      APP_SECRET: "test-app-secret-0123456789-0123456789",
+      APP_ORIGIN: "http://localhost:3000",
+      RISK_URL: `http://127.0.0.1:${(riskServer.address() as AddressInfo).port}`,
+      AI_PROVIDER: "off",
+    });
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.VAULT_URL;
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      const text = args.map(String).join(" ");
+      const code = /Your code is (\d{6})/.exec(text)?.[1];
+      const to = /To: (\S+)/.exec(text)?.[1];
+      if (code) sentCodes.push(code);
+      if (to) sentTo.push(to);
+    });
+
+    db = await import("../src/server/db");
+    auth = await import("../src/server/auth");
+    plans = await import("../src/server/plans");
+    payments = await import("../src/server/payments");
+  }, 60_000);
+
+  afterAll(async () => {
+    vi.restoreAllMocks();
+    await db?.db().end();
+    (globalThis as { __lpPool?: unknown }).__lpPool = undefined;
+    await new Promise<void>((r) => riskServer?.close(() => r()));
+    await admin?.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
+    await admin?.end();
+  });
+
+  beforeEach(() => {
+    riskMode = "pass";
+  });
+
+  describe("sign-in by email code", () => {
+    it("INV-22 a new person gets their own plan, as its owner", async () => {
+      const s = await signUp("Eleanor Hughes", `el-${randomUUID()}@example.com`);
+      as(s);
+      const me = await auth.currentUser();
+      expect(me?.memberships.map((m) => m.role)).toEqual(["OWNER"]);
+      // Only a hash of the session token is stored.
+      const raw = await db.db().query(`SELECT 1 FROM sessions WHERE token_hash = $1`, [s]);
+      expect(raw.rowCount).toBe(0);
+    });
+
+    it("INV-22 a code works once, and five wrong guesses lock it", async () => {
+      const email = `c-${randomUUID()}@example.com`;
+      const b = await auth.beginSignUpWithCode({ name: "C", email });
+      if (!b.ok) throw new Error(b.message);
+      const right = sentCodes.at(-1)!;
+      const wrong = right === "000000" ? "111111" : "000000";
+      for (let i = 0; i < 5; i++) expect((await auth.finishSignUpWithCode(b.value.codeId, wrong)).ok).toBe(false);
+      expect((await auth.finishSignUpWithCode(b.value.codeId, right)).ok).toBe(false); // locked
+      const b2 = await auth.beginSignUpWithCode({ name: "C", email });
+      if (!b2.ok) throw new Error(b2.message);
+      const code = sentCodes.at(-1)!;
+      expect((await auth.finishSignUpWithCode(b2.value.codeId, code)).ok).toBe(true);
+      expect((await auth.finishSignUpWithCode(b2.value.codeId, code)).ok).toBe(false); // used
+    });
+
+    it("INV-22 no more than three codes per email in 15 minutes", async () => {
+      const email = `r-${randomUUID()}@example.com`;
+      for (let i = 0; i < 3; i++) expect((await auth.beginSignUpWithCode({ name: "R", email })).ok).toBe(true);
+      expect(await auth.beginSignUpWithCode({ name: "R", email })).toMatchObject({ ok: false });
+    });
+
+    it("INV-22 asking to sign in doesn't reveal whether an email has an account", async () => {
+      const before = sentTo.length;
+      const r = await auth.beginSignInWithCode(`nobody-${randomUUID()}@example.com`);
+      expect(r.ok).toBe(true); // same answer as for a real account
+      expect(sentTo.length).toBe(before); // but nothing was sent
+    });
+  });
+
+  describe("plans and invites", () => {
+    it("INV-08 the owner can't name themselves as their own contact", async () => {
+      const email = `o-${randomUUID()}@example.com`;
+      as(await signUp("Owner", email));
+      const ctx = await plans.requireRole("OWNER");
+      expect(await plans.confirmPlan(ctx, planFor(email))).toMatchObject({ ok: false });
+    });
+
+    it("INV-09 each confirmation is a new version, and the contact is invited once per change", async () => {
+      as(await signUp("Owner", `o-${randomUUID()}@example.com`));
+      const ctx = await plans.requireRole("OWNER");
+      const contact = `p-${randomUUID()}@example.com`;
+      const a = await plans.confirmPlan(ctx, planFor(contact));
+      const b = await plans.confirmPlan(ctx, planFor(contact));
+      expect(a).toMatchObject({ ok: true, version: 1 });
+      expect(b).toMatchObject({ ok: true, version: 2 });
+      if (a.ok && b.ok) {
+        expect(a.inviteLinks).toHaveLength(1);
+        expect(b.inviteLinks).toHaveLength(1); // re-invited because they haven't joined yet; the old link is revoked
+      }
+      const invites = await db.db().query(`SELECT count(*) FILTER (WHERE revoked_at IS NULL) AS live FROM invites WHERE plan_id = $1`, [ctx.planId]);
+      expect(Number(invites.rows[0].live)).toBe(1);
+    });
+
+    it("INV-08 INV-22 an invite makes someone the contact, works once, and gives them no owner powers", async () => {
+      as(await signUp("Owner", `o-${randomUUID()}@example.com`));
+      const owner = await plans.requireRole("OWNER");
+      const contactEmail = `p-${randomUUID()}@example.com`;
+      const r = await plans.confirmPlan(owner, planFor(contactEmail));
+      if (!r.ok) throw new Error("confirm failed");
+      const token = r.inviteLinks[0]!.split("/invite/")[1]!;
+      const contactSession = await signUp("Priya", contactEmail, token);
+      as(contactSession);
+      const ctx = await plans.requireRole("TRUSTED_CONTACT");
+      expect(ctx.planId).toBe(owner.planId);
+      await expect(plans.requireRole("OWNER")).rejects.toThrow(/NEXT_REDIRECT/);
+      expect(await plans.confirmPlan(ctx, planFor("x@example.com"))).toMatchObject({ ok: false });
+      expect(await payments.actOnPayment(ctx, randomUUID(), "send-anyway")).toMatchObject({ ok: false });
+      // The same link can't be used again.
+      await expect(signUp("Someone else", `s-${randomUUID()}@example.com`, token)).rejects.toThrow(/expired|used/);
+    });
+
+    it("signed-out visitors are sent to sign in", async () => {
+      testCookies.clear();
+      await expect(plans.requireRole("OWNER")).rejects.toThrow(/NEXT_REDIRECT:\/signin/);
+    });
+  });
+
+  describe("payments", () => {
+    async function ownerWithPlan() {
+      as(await signUp("Eleanor", `e-${randomUUID()}@example.com`));
+      const ctx = await plans.requireRole("OWNER");
+      await plans.confirmPlan(ctx, planFor(`p-${randomUUID()}@example.com`));
+      return ctx;
+    }
+    const scam = { payeeName: "Account Support Desk", payeeEmail: "desk@example.net", amount: "1200", method: "gift_card", note: "URGENT buy gift cards today to unlock your account" };
+
+    it("INV-10 a scam is paused, and a risk-service outage pauses too", async () => {
+      const ctx = await ownerWithPlan();
+      riskMode = "hold";
+      expect(await payments.createPayment(ctx, scam)).toMatchObject({ ok: true, level: "HOLD" });
+      riskMode = "down";
+      expect(await payments.createPayment(ctx, { ...scam, payeeName: "Pharmacy", payeeEmail: "rx@example.com", amount: "12", method: "p2p", note: "" })).toMatchObject({ ok: true, level: "HOLD" });
+    });
+
+    it("rejects malformed amounts and emails before anything is checked", async () => {
+      const ctx = await ownerWithPlan();
+      for (const bad of [{ ...scam, amount: "-5" }, { ...scam, amount: "1e9" }, { ...scam, amount: "12.345" }, { ...scam, payeeEmail: "not-an-email" }]) {
+        expect(await payments.createPayment(ctx, bad)).toMatchObject({ ok: false });
+      }
+    });
+
+    it("only allowed choices move a paused payment, and 'send anyway' waits 24 hours", async () => {
+      const ctx = await ownerWithPlan();
+      riskMode = "hold";
+      const r = await payments.createPayment(ctx, scam);
+      if (!r.ok) throw new Error("create failed");
+      expect(await payments.actOnPayment(ctx, r.id, "confirm")).toMatchObject({ ok: false }); // confirm is only for "Is this right?"
+      expect(await payments.actOnPayment(ctx, r.id, "cancel-release")).toMatchObject({ ok: false });
+      expect(await payments.actOnPayment(ctx, r.id, "send-anyway")).toMatchObject({ ok: true });
+      const p = await payments.getPayment(ctx, r.id);
+      expect(p?.status).toBe("RELEASE_SCHEDULED");
+      expect((p?.releaseAt ?? 0) - Date.now()).toBeGreaterThan(23.9 * 3_600_000);
+      expect(await payments.actOnPayment(ctx, r.id, "cancel-release")).toMatchObject({ ok: true });
+      expect((await payments.getPayment(ctx, r.id))?.status).toBe("STOPPED_BY_OWNER");
+    });
+
+    it("two choices at the same moment: exactly one wins", async () => {
+      const ctx = await ownerWithPlan();
+      riskMode = "hold";
+      const r = await payments.createPayment(ctx, scam);
+      if (!r.ok) throw new Error("create failed");
+      const results = await Promise.all([payments.actOnPayment(ctx, r.id, "stop"), payments.actOnPayment(ctx, r.id, "send-anyway")]);
+      expect(results.filter((x) => x.ok)).toHaveLength(1);
+    });
+
+    it("INV-08 nobody can see or act on another person's payment", async () => {
+      const a = await ownerWithPlan();
+      riskMode = "hold";
+      const r = await payments.createPayment(a, scam);
+      if (!r.ok) throw new Error("create failed");
+      const b = await ownerWithPlan();
+      expect(await payments.getPayment(b, r.id)).toBeNull();
+      expect(await payments.actOnPayment(b, r.id, "send-anyway")).toMatchObject({ ok: false });
+    });
+  });
+});

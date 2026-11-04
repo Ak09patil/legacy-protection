@@ -16,8 +16,14 @@ export default defineConfig({
       { find: /^@lp\/guard$/, replacement: src("guard") },
       { find: /^@lp\/service$/, replacement: src("service") },
       { find: /^@lp\/vault$/, replacement: src("vault") },
+      { find: /^@lp\/db\/url$/, replacement: fileURLToPath(new URL("./packages/db/src/url.ts", import.meta.url)) },
+      // The web app's server code, tested without Next.js running.
+      { find: /^@\//, replacement: fileURLToPath(new URL("./apps/web/src/", import.meta.url)) },
+      { find: /^server-only$/, replacement: fileURLToPath(new URL("./apps/web/test/shims/server-only.ts", import.meta.url)) },
+      { find: /^next\/headers$/, replacement: fileURLToPath(new URL("./apps/web/test/shims/next-headers.ts", import.meta.url)) },
+      { find: /^next\/navigation$/, replacement: fileURLToPath(new URL("./apps/web/test/shims/next-navigation.ts", import.meta.url)) },
       { find: /^@lp\/db\/audit$/, replacement: fileURLToPath(new URL("./packages/db/src/audit.ts", import.meta.url)) },
     ],
   },
-  test: { include: ["packages/*/test/**/*.test.ts", "workers/*/test/**/*.test.ts"], testTimeout: 30_000 },
+  test: { include: ["packages/*/test/**/*.test.ts", "workers/*/test/**/*.test.ts", "apps/web/test/**/*.test.ts"], testTimeout: 30_000 },
 });

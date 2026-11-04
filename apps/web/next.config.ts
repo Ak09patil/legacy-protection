@@ -20,6 +20,7 @@ const nextConfig: NextConfig = {
       "@lp/paypal$": pkg("paypal"),
       "@lp/vault$": pkg("vault"),
       "@lp/db/audit$": path.resolve(__dirname, "../../packages/db/src/audit.ts"),
+      "@lp/db/url$": path.resolve(__dirname, "../../packages/db/src/url.ts"),
     };
     // Source files import siblings with .js extensions (NodeNext style).
     config.resolve.extensionAlias = { ".js": [".ts", ".tsx", ".js"] };

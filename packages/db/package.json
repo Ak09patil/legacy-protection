@@ -13,6 +13,10 @@
     "./audit": {
       "types": "./src/audit.ts",
       "default": "./dist/audit.js"
+    },
+    "./url": {
+      "types": "./src/url.ts",
+      "default": "./dist/url.js"
     }
   },
   "dependencies": {

@@ -13,7 +13,8 @@
     "db:migrate": "tsx --env-file=.env packages/db/scripts/migrate.mts",
     "paypal:smoke": "tsx --env-file=.env --tsconfig tsconfig.scripts.json packages/paypal/scripts/smoke.mts",
     "worker": "pnpm --filter @lp/executor start",
-    "vault": "pnpm --filter @lp/vault start"
+    "vault": "pnpm --filter @lp/vault start",
+    "db:migrate:ci": "tsx --tsconfig tsconfig.scripts.json packages/db/scripts/migrate.mts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

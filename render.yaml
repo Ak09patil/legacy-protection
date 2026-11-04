@@ -1,0 +1,125 @@
+# Render Blueprint: everything Legacy Protection needs, as separate services.
+# Only `web` is public. The vault, risk model and Temporal are private services,
+# reachable only inside this Render account's private network.
+#
+# Secrets marked `sync: false` are entered once in the Render dashboard and never
+# committed. PayPal is sandbox only: the code refuses live endpoints (INV-19).
+
+databases:
+  # The main database. Holds sealed sensitive fields only as ciphertext (INV-24).
+  - name: lp-main
+    databaseName: legacy_protection
+    plan: basic-256mb
+    ipAllowList: [] # no access from the internet
+
+  # The vault's own database: wrapped keys and the access log. Nothing else.
+  - name: lp-vault-db
+    databaseName: legacy_protection_vault
+    plan: basic-256mb
+    ipAllowList: []
+
+envVarGroups:
+  - name: lp-shared
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TEMPORAL_ADDRESS
+        value: lp-temporal:7233
+      - key: VAULT_URL
+        value: http://lp-vault:8787
+      - key: RISK_URL
+        value: http://lp-risk:8765
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      # The least-privilege app role's password; the app and worker build their lp_app URL from the owner URL's host.
+      - key: LP_APP_PASSWORD
+        generateValue: true
+
+services:
+  # ---------------------------------------------------------------- public app
+  - type: web
+    name: lp-web
+    runtime: node
+    plan: starter
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @lp/web build
+    # Runs migrations as the database owner before each deploy; the app itself connects as lp_app.
+    preDeployCommand: pnpm db:migrate:ci
+    startCommand: pnpm --filter @lp/web start
+    healthCheckPath: /api/health
+    envVars:
+      - fromGroup: lp-shared
+      - key: DATABASE_OWNER_URL
+        fromDatabase: { name: lp-main, property: connectionString }
+      - key: APP_ORIGIN
+        sync: false
+      - key: APP_SECRET
+        generateValue: true
+      - key: VAULT_SECRET_WEB
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: OPS_EMAILS
+        sync: false
+
+  # ---------------------------------------------------- background: timelines
+  - type: worker
+    name: lp-worker
+    runtime: node
+    plan: starter
+    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    startCommand: pnpm worker
+    envVars:
+      - fromGroup: lp-shared
+      - key: DATABASE_OWNER_URL # used only for its host; the worker connects as lp_app
+        fromDatabase: { name: lp-main, property: connectionString }
+      - key: VAULT_SECRET_WORKER
+        sync: false
+
+  # ---------------------------------------------------- private: the vault
+  - type: pserv
+    name: lp-vault
+    runtime: node
+    plan: starter
+    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    startCommand: pnpm vault
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: VAULT_PORT
+        value: "8787"
+      - key: VAULT_DATABASE_URL
+        fromDatabase: { name: lp-vault-db, property: connectionString }
+      - key: VAULT_MASTER_KEY # in production proper, a cloud KMS key instead
+        sync: false
+      - key: VAULT_SECRET_WEB
+        sync: false
+      - key: VAULT_SECRET_WORKER
+        sync: false
+
+  # ------------------------------------------------ private: the risk model
+  - type: pserv
+    name: lp-risk
+    runtime: python
+    plan: starter
+    rootDir: services/risk
+    buildCommand: pip install -e . && python -m risk.train
+    startCommand: PYTHONPATH=src uvicorn risk.api:app --host 0.0.0.0 --port 8765
+
+  # ------------------------------------------- private: Temporal (dev server)
+  # For the hackathon: Temporal's single-binary server with its state on a disk.
+  # In production: Temporal Cloud (set TEMPORAL_ADDRESS, TEMPORAL_NAMESPACE, TEMPORAL_API_KEY).
+  - type: pserv
+    name: lp-temporal
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./deploy/temporal.Dockerfile
+    disk:
+      name: temporal-data
+      mountPath: /data
+      sizeGB: 1

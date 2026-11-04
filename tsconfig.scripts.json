@@ -32,6 +32,9 @@
       ],
       "@lp/vault": [
         "packages/vault/src/index.ts"
+      ],
+      "@lp/db/url": [
+        "packages/db/src/url.ts"
       ]
     }
   }

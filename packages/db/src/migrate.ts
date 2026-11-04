@@ -45,3 +45,4 @@ export async function migrate(client: pg.Client | pg.PoolClient, appRolePassword
 function quoteLiteral(s: string): string {
   return `'${s.replace(/'/g, "''")}'`;
 }
+

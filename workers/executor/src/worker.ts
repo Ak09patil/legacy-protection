@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { Client, Connection } from "@temporalio/client";
 import { NativeConnection, Worker } from "@temporalio/worker";
 import pg from "pg";
+import { appDatabaseUrl } from "@lp/db/url";
 import { configureVault } from "@lp/service";
 import { httpVault } from "@lp/vault";
 import { createActivities, executorFromEnv } from "./activities.js";
@@ -11,8 +12,7 @@ import { createActivities, executorFromEnv } from "./activities.js";
 export const TASK_QUEUE = "legacy-protection";
 
 async function main() {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) throw new Error("DATABASE_URL is not set");
+  const databaseUrl = appDatabaseUrl();
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 5 });
   // A dropped idle connection (database restart, failover) must not crash the worker; the pool reconnects.
   pool.on("error", (e) => console.error(`[db] idle connection lost: ${e.message}`));
