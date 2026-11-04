@@ -28,6 +28,7 @@ let db: typeof import("../src/server/db");
 
 const sentCodes: string[] = [];
 const sentTo: string[] = [];
+const sentSubjects: string[] = [];
 
 const url = (database: string, user?: string) => {
   const u = new URL(ADMIN_URL!);
@@ -119,10 +120,12 @@ suite("web server", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
       const text = args.map(String).join(" ");
-      const code = /Your code is (\d{6})/.exec(text)?.[1];
+      const code = /(?:Your code is|Ihr Code ist|Su código es) (\d{6})/.exec(text)?.[1];
       const to = /To: (\S+)/.exec(text)?.[1];
       if (code) sentCodes.push(code);
       if (to) sentTo.push(to);
+      const subject = /Subject: (.+)/.exec(text)?.[1];
+      if (subject) sentSubjects.push(subject);
     });
 
     db = await import("../src/server/db");
@@ -181,6 +184,40 @@ suite("web server", () => {
       const r = await auth.beginSignInWithCode(`nobody-${randomUUID()}@example.com`);
       expect(r.ok).toBe(true); // same answer as for a real account
       expect(sentTo.length).toBe(before); // but nothing was sent
+    });
+  });
+
+  describe("language", () => {
+    it("a new account keeps the language it was set up in, and it follows them to a new device", async () => {
+      const email = `l-${randomUUID()}@example.com`;
+      testCookies.clear();
+      testCookies.set("lp_lang", "de");
+      const begun = await auth.beginSignUpWithCode({ name: "Greta", email });
+      if (!begun.ok) throw new Error(begun.message);
+      const r = await auth.finishSignUpWithCode(begun.value.codeId, sentCodes.at(-1)!);
+      expect(r.ok).toBe(true);
+      expect(sentSubjects.at(-1)).toMatch(/^Ihr Legacy-Protection-Code: \d{6}$/); // the code email is in German too
+      const row = await db.db().query(`SELECT locale FROM users WHERE email = $1`, [email]);
+      expect(row.rows[0].locale).toBe("de");
+
+      // A new device with no language chosen: signing in brings German with it.
+      testCookies.clear();
+      const signIn = await auth.beginSignInWithCode(email);
+      if (!signIn.ok) throw new Error(signIn.message);
+      expect((await auth.finishSignInWithCode(signIn.value.codeId, sentCodes.at(-1)!)).ok).toBe(true);
+      expect(testCookies.get("lp_lang")).toBe("de");
+      expect((await auth.currentUser())?.locale).toBe("de");
+    });
+
+    it("a language already chosen on this device is never overwritten by signing in", async () => {
+      const email = `l-${randomUUID()}@example.com`;
+      await signUp("Ana", email); // English account
+      testCookies.clear();
+      testCookies.set("lp_lang", "es");
+      const signIn = await auth.beginSignInWithCode(email);
+      if (!signIn.ok) throw new Error(signIn.message);
+      await auth.finishSignInWithCode(signIn.value.codeId, sentCodes.at(-1)!);
+      expect(testCookies.get("lp_lang")).toBe("es");
     });
   });
 
@@ -249,6 +286,21 @@ suite("web server", () => {
       expect(await payments.createPayment(ctx, { ...scam, payeeName: "Pharmacy", payeeEmail: "rx@example.com", amount: "12", method: "p2p", note: "" })).toMatchObject({ ok: true, level: "HOLD" });
     });
 
+    it("INV-10 being asked for gift cards is enough to pause, even with no message to read", async () => {
+      const ctx = await ownerWithPlan();
+      riskMode = "pass";
+      const r = await payments.createPayment(ctx, { ...scam, note: "" });
+      expect(r).toMatchObject({ ok: true, level: "HOLD" });
+    });
+
+    it("INV-10 a scam written in German or Spanish is paused just like one in English", async () => {
+      const ctx = await ownerWithPlan();
+      riskMode = "pass";
+      for (const note of ["DRINGEND: Kaufen Sie heute Geschenkkarten, sonst wird Ihr Konto gesperrt.", "URGENTE: compre tarjetas regalo hoy mismo o su cuenta será bloqueada."]) {
+        expect(await payments.createPayment(ctx, { ...scam, method: "p2p", note })).toMatchObject({ ok: true, level: "HOLD" });
+      }
+    });
+
     it("rejects malformed amounts and emails before anything is checked", async () => {
       const ctx = await ownerWithPlan();
       for (const bad of [{ ...scam, amount: "-5" }, { ...scam, amount: "1e9" }, { ...scam, amount: "12.345" }, { ...scam, payeeEmail: "not-an-email" }]) {
@@ -276,8 +328,12 @@ suite("web server", () => {
       riskMode = "hold";
       const r = await payments.createPayment(ctx, scam);
       if (!r.ok) throw new Error("create failed");
-      const results = await Promise.all([payments.actOnPayment(ctx, r.id, "stop"), payments.actOnPayment(ctx, r.id, "send-anyway")]);
+      // The same choice made twice at once (a double tap, two open tabs): it happens once, and the contact is told once.
+      // Different choices may legitimately both succeed in sequence, e.g. "send anyway" then "stop" is how she cancels.
+      const results = await Promise.all([payments.actOnPayment(ctx, r.id, "send-anyway"), payments.actOnPayment(ctx, r.id, "send-anyway")]);
       expect(results.filter((x) => x.ok)).toHaveLength(1);
+      const p = await payments.getPayment(ctx, r.id);
+      expect(p?.history.filter((h) => h.kind === "PAYMENT_SEND_ANYWAY")).toHaveLength(1);
     });
 
     it("INV-08 nobody can see or act on another person's payment", async () => {

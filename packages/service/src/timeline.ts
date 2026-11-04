@@ -5,6 +5,7 @@
  * plan that shouldn't move (INV-06, INV-07, INV-20).
  */
 
+import { EMAILS, emailLocale } from "./emails.js";
 import { DEFAULT_POLICY, deadlines, isMissed, nextDue, type CheckinPolicy, type Phase } from "@lp/core";
 import { appendEvent } from "@lp/db/audit";
 import { PlanDocumentSchema, type PlanDocument } from "@lp/policy";
@@ -74,12 +75,12 @@ export async function loadTimeline(pool: pg.Pool, planId: string): Promise<Timel
 }
 
 async function people(c: Tx, planId: string) {
-  const o = await c.query<{ id: string; display_name: string; email: string }>(
-    `SELECT u.id, u.display_name, u.email FROM plans p JOIN users u ON u.id = p.owner_id WHERE p.id = $1`,
+  const o = await c.query<{ id: string; display_name: string; email: string; locale: string }>(
+    `SELECT u.id, u.display_name, u.email, u.locale FROM plans p JOIN users u ON u.id = p.owner_id WHERE p.id = $1`,
     [planId],
   );
-  const k = await c.query<{ id: string; display_name: string; email: string }>(
-    `SELECT u.id, u.display_name, u.email FROM memberships m JOIN users u ON u.id = m.user_id
+  const k = await c.query<{ id: string; display_name: string; email: string; locale: string }>(
+    `SELECT u.id, u.display_name, u.email, u.locale FROM memberships m JOIN users u ON u.id = m.user_id
       WHERE m.plan_id = $1 AND m.role = 'TRUSTED_CONTACT' AND m.revoked_at IS NULL`,
     [planId],
   );
@@ -101,7 +102,8 @@ export async function sendReminder(pool: pg.Pool, planId: string, dueAt: number,
     if (dup.rowCount) return "SKIPPED";
     const { owner } = await people(c, planId);
     const origin = process.env.APP_ORIGIN ?? "http://localhost:3000";
-    await outbox(c, planId, owner.id, owner.email, kind, "Time for your check-in", `One tap lets us know you’re well: ${origin}/home`);
+    const [subject, body] = EMAILS[emailLocale(owner.locale)].checkinReminder(origin);
+    await outbox(c, planId, owner.id, owner.email, kind, subject, body);
     await appendEvent(c, { planId, at: new Date(), kind: "CHECKIN_REMINDER_SENT", actor: "timeline", payload: { n, dueAt: due } });
     return "SENT";
   });
@@ -122,18 +124,10 @@ export async function markMissedIfDue(pool: pg.Pool, planId: string, now = Date.
     if (r.rejected) return false;
     const { owner, contact } = await people(c, planId);
     if (contact) {
-      const first = owner.display_name.split(" ")[0];
+      const first = owner.display_name.split(" ")[0] ?? owner.display_name;
       const origin = process.env.APP_ORIGIN ?? "http://localhost:3000";
-      await outbox(
-        c,
-        planId,
-        contact.id,
-        contact.email,
-        "CONTACT_CHECKIN_MISSED",
-        `${first} hasn’t checked in`,
-        `${first} missed their check-in and hasn’t answered our reminders. That can happen for ordinary reasons. Please try to reach them. If you know something has happened, you can tell us here: ${origin}/contact`,
-        new Date(now),
-      );
+      const [subject, body] = EMAILS[emailLocale(contact.locale)].contactCheckinMissed(first, origin);
+      await outbox(c, planId, contact.id, contact.email, "CONTACT_CHECKIN_MISSED", subject, body, new Date(now));
     }
     return true;
   });

@@ -22,6 +22,9 @@ import {
 import { appendEvent } from "@lp/db/audit";
 import { z } from "zod";
 import { db, tx, type Tx } from "./db";
+import { isLocale, LOCALE_COOKIE } from "@/i18n/config";
+import { getLocale } from "@/i18n/server";
+import { EMAILS } from "@lp/service";
 import { sendEmail } from "./mail";
 
 const SESSION_COOKIE = "lp_session";
@@ -35,6 +38,7 @@ export interface SessionUser {
   id: string;
   email: string;
   name: string;
+  locale: string;
   memberships: Array<{ planId: string; role: Role; ownerName: string }>;
 }
 
@@ -55,7 +59,13 @@ async function createSession(c: Tx, userId: string): Promise<void> {
   const expires = new Date(Date.now() + SESSION_DAYS * 86_400_000);
   const ua = (await headers()).get("user-agent")?.slice(0, 200) ?? null;
   await c.query(`INSERT INTO sessions (token_hash, user_id, expires_at, user_agent) VALUES ($1, $2, $3, $4)`, [sha256(t), userId, expires, ua]);
-  (await cookies()).set(SESSION_COOKIE, t, {
+  // Carry the person's language to this device, unless they already chose one here.
+  const jar = await cookies();
+  if (!isLocale(jar.get(LOCALE_COOKIE)?.value)) {
+    const l = await c.query<{ locale: string }>(`SELECT locale FROM users WHERE id = $1`, [userId]);
+    if (l.rows[0]) jar.set(LOCALE_COOKIE, l.rows[0].locale, { path: "/", sameSite: "lax", maxAge: 60 * 60 * 24 * 400 });
+  }
+  jar.set(SESSION_COOKIE, t, {
     httpOnly: true,
     secure: relyingParty().origin.startsWith("https://"),
     sameSite: "lax",
@@ -68,11 +78,11 @@ async function createSession(c: Tx, userId: string): Promise<void> {
 export async function currentUser(): Promise<SessionUser | null> {
   const t = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!t || t.length > 100) return null;
-  const r = await db().query<{ id: string; email: string; display_name: string }>(
+  const r = await db().query<{ id: string; email: string; display_name: string; locale: string }>(
     `UPDATE sessions s SET last_seen_at = now()
        FROM users u
       WHERE s.token_hash = $1 AND s.expires_at > now() AND u.id = s.user_id
-      RETURNING u.id, u.email, u.display_name`,
+      RETURNING u.id, u.email, u.display_name, u.locale`,
     [sha256(t)],
   );
   const u = r.rows[0];
@@ -88,6 +98,7 @@ export async function currentUser(): Promise<SessionUser | null> {
     id: u.id,
     email: u.email,
     name: u.display_name,
+    locale: u.locale,
     memberships: m.rows.map((x) => ({ planId: x.plan_id, role: x.role, ownerName: x.owner_name })),
   };
 }
@@ -197,7 +208,7 @@ export async function finishSignUp(challengeId: string, response: RegistrationRe
       if (!v.verified || !v.registrationInfo) return { ok: false as const, message: "We couldn’t verify your passkey." };
       const { credential, credentialDeviceType, credentialBackedUp } = v.registrationInfo;
 
-      await c.query(`INSERT INTO users (id, email, display_name) VALUES ($1, $2, $3)`, [pending.userId, pending.email, pending.name]);
+      await c.query(`INSERT INTO users (id, email, display_name, locale) VALUES ($1, $2, $3, $4)`, [pending.userId, pending.email, pending.name, await getLocale()]);
       await c.query(
         `INSERT INTO passkeys (id, user_id, public_key, counter, transports, device_type, backed_up) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [credential.id, pending.userId, Buffer.from(credential.publicKey), credential.counter, credential.transports ?? [], credentialDeviceType, credentialBackedUp],
@@ -354,7 +365,9 @@ async function issueCode(purpose: "signup" | "signin" | "confirm", email: string
     [id, email, purpose, codeHmac(id, code), pending === undefined ? null : JSON.stringify(pending), new Date(Date.now() + CODE_TTL_MS)],
   );
   if (deliver) {
-    await sendEmail(email, `Your Legacy Protection code: ${code}`, `Your code is ${code}. It works once, for 10 minutes.\n\nIf you didn’t ask for this, you can ignore this email. Nobody can use it without your email inbox.`);
+    // In the language of the page that asked for it. The same for every address, so it says nothing about who has an account.
+    const [subject, text] = EMAILS[await getLocale()].signInCode(code);
+    await sendEmail(email, subject, text);
   }
   return { ok: true, value: { codeId: id } };
 }
@@ -392,7 +405,7 @@ export async function finishSignUpWithCode(codeId: string, code: string): Promis
       const ok = await redeemCode(c, codeId, code, "signup");
       if (!ok) return { ok: false as const, message: "That code isn’t right, or it has expired." };
       const pending = ok.pending as PendingAccount;
-      await c.query(`INSERT INTO users (id, email, display_name) VALUES ($1, $2, $3)`, [pending.userId, pending.email, pending.name]);
+      await c.query(`INSERT INTO users (id, email, display_name, locale) VALUES ($1, $2, $3, $4)`, [pending.userId, pending.email, pending.name, await getLocale()]);
       const role = await setUpAccount(c, pending);
       await createSession(c, pending.userId);
       return { ok: true as const, value: { role } };

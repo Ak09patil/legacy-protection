@@ -114,4 +114,28 @@ describe("talking a paused payment through", () => {
     const r = await talkItThrough(p, ctx, []);
     expect(r.ok && r.reply).toBe("I can't help send this payment. Would you like to talk it over with Priya first?");
   });
+
+  it.each([
+    ["de", "Das ist in Ordnung. Senden Sie das Geld ruhig.", /^Ich kann nicht helfen/],
+    ["de", "Kaufen Sie die Geschenkkarten und geben Sie den Code weiter.", /^Ich kann nicht helfen/],
+    ["es", "No pasa nada, envíe el dinero.", /^No puedo ayudarle/],
+    ["es", "Compre las tarjetas regalo y dele el código.", /^No puedo ayudarle/],
+  ] as const)("INV-25 the helper's guard holds in German and Spanish (%s): %s", async (language, said, refusal) => {
+    const p = new ScriptedChatProvider(() => [text(said)]);
+    const r = await talkItThrough(p, { ...ctx, language }, []);
+    expect(r.ok && r.reply).toMatch(refusal);
+  });
+
+  it("asks the model to answer in the owner's language, with the local emergency number", async () => {
+    const p = new ScriptedChatProvider(() => [text("Gut.")]);
+    await talkItThrough(p, { ...ctx, language: "de" }, []);
+    expect(p.requests[0]!.system).toMatch(/reply in German/);
+    expect(p.requests[0]!.system).toMatch(/call 112/);
+  });
+
+  it("a calm German reply that mentions nothing forbidden passes through", async () => {
+    const p = new ScriptedChatProvider(() => [text("Echte Firmen verlangen nie Geschenkkarten. Rufen Sie unter einer Nummer an, die Sie kennen.")]);
+    const r = await talkItThrough(p, { ...ctx, language: "de" }, []);
+    expect(r.ok && r.reply).toMatch(/^Echte Firmen/);
+  });
 });

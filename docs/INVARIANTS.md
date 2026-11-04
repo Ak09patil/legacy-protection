@@ -178,6 +178,12 @@ Payment notes (what scammers wrote to the owner) and plan documents (the people 
 - **Enforced in:** `packages/vault` (service, policy, envelope encryption), `packages/service` and `apps/web/src/server` (fields sealed before they're written).
 - **Verified by:** `INV-24 the main database only ever holds ciphertext, bound to its plan and kind`, `INV-24 the worker can never read what scammers wrote to the owner`, `INV-24 every release, allowed or refused, is logged, and the log can't be edited`, `INV-24 a wrong secret, another client's secret, or an old replayed request is refused`.
 
+### INV-25 — Every language gets the same protection and the same facts
+A person reading in German or Spanish is protected exactly as an English reader is. The plan they confirm states the same facts in their language (every name, email, amount and day count is inserted by code, never by a translator or model). Scam language is recognised in every language we offer, being asked for gift cards or crypto pauses a payment whatever the message says, and the helper's "never tell them to send it" guard holds in every language it replies in. A server message never reaches a German or Spanish reader in English.
+
+- **Enforced in:** `packages/policy/src/plan.ts` (summary templates per language), `packages/policy/src/keywords.ts`, `apps/web/src/server/payments.ts` (method signals), `packages/ai/src/jobs.ts` (FORBIDDEN_ADVICE per language), `apps/web/src/i18n/errors.ts`.
+- **Verified by:** `INV-25 every language carries the same facts: same lines, every name, email and day count`, `INV-25 scam scripts are recognised in German and Spanish`, `INV-25 the helper's guard holds in German and Spanish`, `INV-25 every server message has a translation`.
+
 ---
 
 ## Change log
@@ -189,3 +195,4 @@ Payment notes (what scammers wrote to the owner) and plan documents (the people 
 | 2026-11-04 | Added INV-23 (cold start), found in end-to-end testing | — |
 | 2026-11-05 | Added INV-24 (sensitive fields sealed by a separate vault) | ADR-0007 |
 | 2026-11-05 | INV-10: an AI text-reader outage asks the owner (REVIEW) instead of holding; risk-service outages still hold. Found when a model outage held a carer's routine payment. | — |
+| 2026-11-05 | Added INV-25 (same protection in every language); method alone (gift cards, crypto) now signals, found when a German scam note went unrecognised in end-to-end testing | — |

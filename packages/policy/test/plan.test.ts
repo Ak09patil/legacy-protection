@@ -102,4 +102,49 @@ describe("plan schema and summary", () => {
       }),
     );
   });
+
+  it("INV-25 every language carries the same facts: same lines, every name, email and day count", () => {
+    fc.assert(
+      fc.property(planArb, (plan) => {
+        const en = summarisePlan(plan, "en");
+        for (const lang of ["de", "es"] as const) {
+          const t = summarisePlan(plan, lang);
+          expect(t).toHaveLength(en.length);
+          const all = t.join(" ");
+          expect(all).toContain(plan.trustedContact.name);
+          expect(all).toContain(plan.trustedContact.email);
+          for (const o of plan.obligations) {
+            expect(all).toContain(o.payeeName);
+            expect(all).toContain(` ${o.continueForDaysAfterActivation} `);
+          }
+        }
+      }),
+    );
+  });
+
+  it("the balance promise is in every language", () => {
+    fc.assert(
+      fc.property(planArb, (plan) => {
+        expect(summarisePlan(plan, "de").join(" ")).toMatch(/schickt es nie an irgendjemanden/);
+        expect(summarisePlan(plan, "es").join(" ")).toMatch(/nunca lo envía a nadie/);
+      }),
+    );
+  });
+
+  it("money and time follow the reader's conventions", () => {
+    const plan = PlanDocumentSchema.parse({
+      schemaVersion: 1,
+      trustedContact: { name: "Priya", email: "priya@example.com" },
+      checkin: { intervalDays: 7, localHour: 15, localMinute: 0, timeZone: "Europe/Berlin" },
+      waitingPeriodHours: 72,
+      onActivation: { cancelSubscriptions: true, cancelOpenInvoices: false, holdBalanceForEstate: true },
+      obligations: [
+        { id: "o1", kind: "HOUSEHOLD_EMPLOYEE", payeeName: "Maria", payeeEmail: "maria@example.com", description: "carer", amountPerPaymentMinor: 123450, currency: "USD", cadence: "WEEKLY", maxPerMonthMinor: 600000, continueForDaysAfterActivation: 60 },
+      ],
+      contentVisibleTo: [],
+    });
+    expect(summarisePlan(plan, "en").join(" ")).toMatch(/3:00 PM.*\$1,234\.50/s);
+    expect(summarisePlan(plan, "de").join(" ")).toMatch(/15:00.*1\.234,50\s\$/s);
+    expect(summarisePlan(plan, "es").join(" ")).toMatch(/15:00.*1\.?234,50\sUS\$/s);
+  });
 });

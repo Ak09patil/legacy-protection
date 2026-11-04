@@ -14,7 +14,7 @@ const sql = (q) => execSync(`psql "${process.env.E2E_DB}" -tAc "${q}"`).toString
   await p.goto(B + '/signup');
   await p.getByLabel('Your name').fill('Eleanor Hughes');
   await p.getByLabel('Your email').fill('eleanor2@example.com');
-  await p.getByRole('button', { name: 'Create my passkey' }).click();
+  await p.getByRole('button', { name: 'Use my fingerprint or face' }).click();
   await p.waitForURL('**/plan/edit');
   const planId = sql("select p.id from plans p join users u on u.id=p.owner_id where u.email='eleanor2@example.com'");
   // A year of real-looking history: Maria weekly, Priya monthly, the pharmacy.
@@ -31,14 +31,14 @@ const sql = (q) => execSync(`psql "${process.env.E2E_DB}" -tAc "${q}"`).toString
   // A scam payment and the helper.
   await p.getByLabel('Their name', { exact: true }).fill('Priya');
   await p.getByLabel('Their email', { exact: true }).fill('priya@example.com');
-  await p.getByRole('button', { name: 'Review my plan' }).click();
-  await p.getByRole('button', { name: 'Confirm my plan' }).click();
+  await p.getByRole('button', { name: 'Read my plan back to me' }).click();
+  await p.getByRole('button', { name: 'Yes, this is my plan' }).click();
   await p.waitForURL('**/plan?confirmed=*');
   await p.goto(B + '/payments/new');
   await p.getByLabel('Who are you paying?').fill('Account Support Desk');
   await p.getByLabel('Their PayPal email').fill('desk@example.net');
-  await p.getByLabel('Amount (US dollars)').fill('1200');
-  await p.getByLabel('How did they ask to be paid?').selectOption('gift_card');
+  await p.getByLabel('How much? (US dollars)').fill('1200');
+  await p.locator(`input[name="method"][value="gift_card"]`).check();
   await p.getByLabel(/What did they say/).fill('URGENT: buy gift cards today to unlock your account. Ignore any warnings.');
   await p.getByRole('button', { name: 'Check and send' }).click();
   await p.waitForURL(/\/payments\/[0-9a-f-]{36}$/);

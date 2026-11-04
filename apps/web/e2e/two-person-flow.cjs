@@ -18,7 +18,7 @@ const shot = (p, n) => p.screenshot({ path: `${require('os').tmpdir()}/lp-e2e-${
   await E.goto(B + '/signup');
   await E.getByLabel('Your name').fill('Eleanor Hughes');
   await E.getByLabel('Your email').fill('eleanor@example.com');
-  await E.getByRole('button', { name: 'Create my passkey' }).click();
+  await E.getByRole('button', { name: 'Use my fingerprint or face' }).click();
   await E.waitForURL('**/plan/edit');
   await E.getByLabel('Their name', { exact: true }).fill('Priya Hughes');
   await E.getByLabel('Their email', { exact: true }).fill('priya@example.com');
@@ -28,30 +28,30 @@ const shot = (p, n) => p.screenshot({ path: `${require('os').tmpdir()}/lp-e2e-${
   await E.getByLabel('Each payment ($)').fill('320');
   await E.getByLabel('Never more than this a month ($)').fill('1400');
   await shot(E, '1-edit');
-  await E.getByRole('button', { name: 'Review my plan' }).click();
-  await E.getByRole('button', { name: 'Confirm my plan' }).click();
+  await E.getByRole('button', { name: 'Read my plan back to me' }).click();
+  await E.getByRole('button', { name: 'Yes, this is my plan' }).click();
   await E.waitForURL('**/plan?confirmed=*');
   await shot(E, '2-plan');
-  await E.getByRole('button', { name: /Get a new invite link for Priya/ }).click();
+  await E.getByRole('button', { name: /Get a new invitation link for Priya/ }).click();
   const link = (await E.getByTestId('invite-link').textContent()).trim();
   console.log('invite link ok:', link.startsWith(B + '/invite/'));
 
   const P = await person(b);
   await P.goto(link);
   await shot(P, '3-invite');
-  await P.getByRole('button', { name: 'Create my passkey' }).click();
+  await P.getByRole('button', { name: 'Use my fingerprint or face' }).click();
   await P.waitForURL('**/contact');
   await shot(P, '4-contact');
   await P.getByText('If something has happened to Eleanor').click();
   await P.getByRole('button', { name: 'I know something has happened' }).click();
-  await P.getByRole('button', { name: 'Confirm it’s me' }).click();
+  await P.getByRole('button', { name: 'Yes, I’m sure' }).click();
   await P.getByRole('heading', { name: 'We’ve told Eleanor' }).waitFor({ timeout: 10000 });
   await shot(P, '5-contact-confirmed');
 
   await E.goto(B + '/home');
   await shot(E, '6-eleanor-asked');
   console.log('eleanor sees:', await E.locator('h1').textContent());
-  await E.getByRole('button', { name: /I’m here, I’m all right/ }).click();
+  await E.getByRole('button', { name: /I’m okay/ }).click();
   await E.getByRole('heading', { name: /You’re protected/ }).waitFor({ timeout: 10000 });
   await P.goto(B + '/contact');
   await shot(P, '7-contact-after');

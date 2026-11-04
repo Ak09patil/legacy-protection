@@ -25,11 +25,11 @@ export function Panel({ children, className = "", ...rest }: { children: ReactNo
 }
 
 const BASE =
-  "inline-flex w-full items-center justify-center rounded-full px-6 py-4 text-[18px] font-semibold transition-transform duration-300 ease-calm active:scale-[0.98] disabled:opacity-60";
+  "inline-flex min-h-[56px] w-full items-center justify-center rounded-full px-6 py-4 text-center text-[19px] font-semibold transition-transform duration-300 ease-calm active:scale-[0.98] disabled:opacity-60";
 export const buttonStyles = {
   primary: `${BASE} bg-gradient-to-br from-green-2 to-green text-white shadow-[0_16px_32px_-16px_rgba(46,94,69,0.8)] hover:-translate-y-0.5`,
   soft: `${BASE} bg-white/80 text-green shadow-[inset_0_0_0_1.5px_rgba(46,94,69,0.35)] hover:bg-white`,
-  quiet: "text-[17px] font-semibold text-green underline decoration-mint decoration-2 underline-offset-[6px] hover:decoration-green",
+  quiet: "inline-block min-h-[48px] content-center text-[18px] font-semibold text-green underline decoration-mint decoration-2 underline-offset-[6px] hover:decoration-green",
 };
 
 export function ButtonLink({ href, variant = "primary", children }: { href: string; variant?: keyof typeof buttonStyles; children: ReactNode }) {
@@ -46,7 +46,7 @@ export function Pill({ tone, children }: { tone: "safe" | "paused" | "neutral"; 
     paused: "bg-[#FCEFD9] text-amber-ink px-3 py-1",
     neutral: "bg-white/70 text-ink-soft px-3 py-1",
   } as const;
-  return <span className={`whitespace-nowrap rounded-full text-[14px] font-semibold ${tones[tone]}`}>{children}</span>;
+  return <span className={`whitespace-nowrap rounded-full text-[15px] font-semibold ${tones[tone]}`}>{children}</span>;
 }
 
 export function money(minor: number): string {

@@ -82,7 +82,7 @@ export async function suggestCarers(ctx: Ctx): Promise<SuggestResult> {
 
 const METHOD_WORDS: Record<string, string> = { p2p: "PayPal", gift_card: "gift cards", crypto: "cryptocurrency", bank_transfer: "a bank transfer" };
 
-export async function talkAboutPayment(ctx: Ctx, paymentId: string, conversation: ChatMessage[]): Promise<{ ok: true; reply: string } | { ok: false; reason: string }> {
+export async function talkAboutPayment(ctx: Ctx, paymentId: string, conversation: ChatMessage[], language: "en" | "de" | "es" = "en"): Promise<{ ok: true; reply: string } | { ok: false; reason: string }> {
   const provider = chatProvider();
   if (!provider) return { ok: false, reason: "AI_OFF" };
   const p = await getPayment(ctx, paymentId, "ai_helper");
@@ -107,6 +107,7 @@ export async function talkAboutPayment(ctx: Ctx, paymentId: string, conversation
       payeeNote: p.note,
       reasons: p.decision?.reasons ?? [],
       contactName: contact.rows[0]?.display_name ?? null,
+      language,
     },
     turns,
   );

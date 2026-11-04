@@ -25,7 +25,10 @@ const lastCode = () => { const m = [...fs.readFileSync(process.env.E2E_LOG ?? 's
   await p.goto(B + '/signin');
   await p.getByRole('button', { name: 'Email me a code instead' }).click();
   await p.getByLabel('Your email').fill('code@example.com');
-  await p.getByRole('button', { name: 'Email me a code' }).click();
+  const before = lastCode();
+  await p.getByRole('button', { name: 'Email me a code', exact: true }).click();
+  await p.getByLabel('Your code').waitFor();
+  for (let i = 0; i < 50 && lastCode() === before; i++) await p.waitForTimeout(100); // the new email, not the sign-up one
   await p.getByLabel('Your code').fill(lastCode());
   await p.getByRole('button', { name: 'Continue' }).click();
   await p.waitForURL('**/home');

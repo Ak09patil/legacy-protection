@@ -18,6 +18,7 @@
     "@lp/paypal": "workspace:*",
     "@lp/policy": "workspace:*",
     "@lp/service": "workspace:*",
+    "@lp/vault": "workspace:*",
     "@paypal/agent-toolkit": "1.11.0",
     "@react-three/fiber": "^9.8.2",
     "@simplewebauthn/browser": "^13.3.0",
@@ -30,8 +31,7 @@
     "react-dom": "19.1.0",
     "server-only": "^0.0.1",
     "three": "^0.187.0",
-    "zod": "^3.25.76",
-    "@lp/vault": "workspace:*"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
@@ -41,6 +41,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/three": "^0.187.0",
+    "axe-core": "4.14.0",
     "eslint": "^9",
     "eslint-config-next": "15.5.28",
     "tailwindcss": "^4",

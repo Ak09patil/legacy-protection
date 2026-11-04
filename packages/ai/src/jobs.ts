@@ -141,7 +141,15 @@ export interface PausedPaymentContext {
   readonly payeeNote: string;
   readonly reasons: readonly Pick<Reason, "code" | "text">[];
   readonly contactName: string | null;
+  /** The owner's language. Replies come back in it. Defaults to English. */
+  readonly language?: "en" | "de" | "es";
 }
+
+const LANGUAGE = {
+  en: { name: "English", emergency: "911" },
+  de: { name: "German, using the formal \"Sie\"", emergency: "112" },
+  es: { name: "Spanish (Spain), using the formal \"usted\"", emergency: "112" },
+} as const;
 
 const TALK_SYSTEM = (c: PausedPaymentContext) => `You are a calm, kind helper inside Legacy Protection, talking with ${c.ownerFirstName},
 an older person whose payment was just paused because it looks like a scam. You are not a person and you
@@ -161,11 +169,23 @@ How to help:
 
 You cannot send, release or approve the payment, and you must never tell them to send it, buy gift cards,
 share codes, or give anyone remote access. Only they can decide, using the buttons on the screen.
-If they say they're in danger or being threatened, tell them to call 911.`;
+If they say they're in danger or being threatened, tell them to call ${LANGUAGE[c.language ?? "en"].emergency}.
+Always reply in ${LANGUAGE[c.language ?? "en"].name}, whatever language the payee's message is in.`;
 
 export type TalkResult = { readonly ok: true; readonly reply: string; readonly model: string } | { readonly ok: false; readonly reason: "PROVIDER_UNAVAILABLE" | "TOO_MANY_STEPS" };
 
-const FORBIDDEN_ADVICE = /\b(send (it|the money|the payment)|go ahead and (pay|send)|buy (the )?gift ?cards?|share (the )?code|remote access|it'?s (safe|fine) to (pay|send))\b/i;
+/** Advice the helper must never give, in every language it speaks. */
+export const FORBIDDEN_ADVICE: readonly RegExp[] = [
+  /\b(send (it|the money|the payment)|go ahead and (pay|send)|buy (the )?gift ?cards?|share (the )?code|remote access|it'?s (safe|fine) to (pay|send))\b/i,
+  /\b(senden sie (es|das geld|die zahlung)|schicken sie (es|das geld)|zahlen sie ruhig|kaufen sie (die )?geschenkkarten|fernzugriff|(geben|teilen) sie (den|ihren) code|(es ist|ist) (sicher|unbedenklich),? zu (zahlen|senden))\b/i,
+  /(envíe(lo)? (el dinero|el pago)|envíelo|adelante,? (pague|envíe)|compre (las )?tarjetas regalo|acceso remoto|(comparta|dé|dele) (el|su) código|es seguro (pagar|enviar))/i,
+];
+
+const REFUSAL = {
+  en: (c: string | null) => `I can't help send this payment. ${c ? `Would you like to talk it over with ${c} first?` : "Please talk to someone you trust before deciding."}`,
+  de: (c: string | null) => `Ich kann nicht helfen, diese Zahlung zu senden. ${c ? `Möchten Sie es zuerst mit ${c} besprechen?` : "Bitte sprechen Sie mit jemandem, dem Sie vertrauen, bevor Sie entscheiden."}`,
+  es: (c: string | null) => `No puedo ayudarle a enviar este pago. ${c ? `¿Quiere hablarlo antes con ${c}?` : "Hable con alguien de confianza antes de decidir, por favor."}`,
+} as const;
 
 export async function talkItThrough(provider: ChatProvider, ctx: PausedPaymentContext, conversation: readonly ChatMessage[]): Promise<TalkResult> {
   const note = ctx.payeeNote ? `The payee's message, quoted:\n${wrapUntrusted("payee_note", ctx.payeeNote).block}` : "There was no message from the payee.";
@@ -173,8 +193,6 @@ export async function talkItThrough(provider: ChatProvider, ctx: PausedPaymentCo
   const r = await runAgent({ provider, system: TALK_SYSTEM(ctx), messages: [first, ...conversation.slice(-12)], tools: [], callTool: async () => ({ ok: false, content: "No tools." }), maxSteps: 1, maxTokens: 300 });
   if (!r.ok) return { ok: false, reason: r.reason };
   // A last check in code: never let the helper talk someone into sending.
-  const reply = FORBIDDEN_ADVICE.test(r.text)
-    ? `I can't help send this payment. ${ctx.contactName ? `Would you like to talk it over with ${ctx.contactName} first?` : "Please talk to someone you trust before deciding."}`
-    : r.text.slice(0, 900);
+  const reply = FORBIDDEN_ADVICE.some((re) => re.test(r.text)) ? REFUSAL[ctx.language ?? "en"](ctx.contactName) : r.text.slice(0, 900);
   return { ok: true, reply, model: r.model };
 }

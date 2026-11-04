@@ -11,6 +11,18 @@ import type { ChatMessage } from "@lp/ai";
 import { actOnPayment, createPayment, type PaymentAction } from "@/server/payments";
 import { applyEvent, checkIn, confirmPlan, inviteExecutor, reissueInvite, requireRole, saveDraft } from "@/server/plans";
 import { PlanDocumentSchema, summarisePlan } from "@lp/policy";
+import { translateError } from "@/i18n/errors";
+import { getLocale } from "@/i18n/server";
+
+/** Server messages in the reader's language. */
+async function local<T extends { ok: boolean }>(r: T): Promise<T> {
+  if (r.ok) return r;
+  const locale = await getLocale();
+  const out: Record<string, unknown> = { ...r };
+  if (typeof out.message === "string") out.message = translateError(locale, out.message);
+  if (Array.isArray(out.issues)) out.issues = [...new Set((out.issues as string[]).map((i) => translateError(locale, i)))];
+  return out as T;
+}
 
 export async function checkInAction(): Promise<void> {
   const ctx = await requireRole("OWNER");
@@ -23,14 +35,14 @@ export async function previewPlanAction(plan: unknown): Promise<{ ok: true; summ
   const ctx = await requireRole("OWNER");
   await saveDraft(ctx, plan);
   const p = PlanDocumentSchema.safeParse(plan);
-  if (!p.success) return { ok: false, issues: p.error.issues.map((i) => i.message) };
-  return { ok: true, summary: summarisePlan(p.data) };
+  if (!p.success) return local({ ok: false, issues: p.error.issues.map((i) => i.message) });
+  return { ok: true, summary: summarisePlan(p.data, await getLocale()) };
 }
 
 export async function confirmPlanAction(plan: unknown) {
   const ctx = await requireRole("OWNER");
   const r = await confirmPlan(ctx, plan);
-  if (!r.ok) return r;
+  if (!r.ok) return local(r);
   await pokeTimeline(ctx.planId);
   revalidatePath("/plan");
   revalidatePath("/home");
@@ -41,7 +53,7 @@ export async function inviteExecutorAction(name: string, email: string) {
   const ctx = await requireRole("OWNER");
   const r = await inviteExecutor(ctx, name, email);
   revalidatePath("/plan");
-  return r;
+  return local(r);
 }
 
 /**
@@ -57,7 +69,7 @@ export async function beginContactConfirmAction(): Promise<
   const action = `CONTACT_CONFIRMED:${ctx.planId}`;
   if (await hasPasskey(ctx.user.id)) return { method: "passkey", ...(await beginStepUp(ctx.user.id, action)) };
   const r = await beginStepUpWithCode(ctx.user, action);
-  return r.ok ? { method: "code", codeId: r.value.codeId, email: ctx.user.email } : { method: "error", message: r.message };
+  return r.ok ? { method: "code", codeId: r.value.codeId, email: ctx.user.email } : { method: "error", message: translateError(await getLocale(), r.message) };
 }
 
 /**
@@ -81,7 +93,7 @@ export async function finishContactConfirmAction(
   });
   if (r.ok) await pokeTimeline(ctx.planId);
   revalidatePath("/contact");
-  return r;
+  return local(r);
 }
 
 export type DraftFromWords =
@@ -121,13 +133,13 @@ export async function paymentAction(formData: FormData): Promise<void> {
 
 export async function reissueInviteAction(role: "TRUSTED_CONTACT" | "EXECUTOR") {
   const ctx = await requireRole("OWNER");
-  return reissueInvite(ctx, role);
+  return local(await reissueInvite(ctx, role));
 }
 
 export async function createPaymentAction(input: unknown) {
   const ctx = await requireRole("OWNER");
   const r = await createPayment(ctx, input);
-  if (!r.ok) return r;
+  if (!r.ok) return local(r);
   await pokeTimeline(ctx.planId);
   revalidatePath("/home");
   redirect(`/payments/${r.id}`);
@@ -140,5 +152,5 @@ export async function suggestCarersAction() {
 
 export async function talkAboutPaymentAction(paymentId: string, conversation: ChatMessage[]) {
   const ctx = await requireRole("OWNER");
-  return talkAboutPayment(ctx, paymentId, conversation);
+  return talkAboutPayment(ctx, paymentId, conversation, await getLocale());
 }

@@ -14,34 +14,42 @@ import {
   signOut,
   type Role,
 } from "@/server/auth";
+import { translateError } from "@/i18n/errors";
+import { getLocale } from "@/i18n/server";
+
+/** Server messages in the reader's language. */
+async function local<T extends { ok: boolean }>(r: T): Promise<T> {
+  if (r.ok || !("message" in r) || typeof r.message !== "string") return r;
+  return { ...r, message: translateError(await getLocale(), r.message) };
+}
 
 export async function beginSignUpAction(input: { name: string; email: string; inviteToken?: string }) {
-  return beginSignUp(input);
+  return local(await beginSignUp(input));
 }
 
 export async function finishSignUpAction(challengeId: string, response: RegistrationResponseJSON) {
   const r = await finishSignUp(challengeId, response);
-  if (!r.ok) return r;
+  if (!r.ok) return local(r);
   redirect(homeFor(r.value.role));
 }
 
 export async function beginSignUpWithCodeAction(input: { name: string; email: string; inviteToken?: string }) {
-  return beginSignUpWithCode(input);
+  return local(await beginSignUpWithCode(input));
 }
 
 export async function finishSignUpWithCodeAction(codeId: string, code: string) {
   const r = await finishSignUpWithCode(codeId, code);
-  if (!r.ok) return r;
+  if (!r.ok) return local(r);
   redirect(homeFor(r.value.role));
 }
 
 export async function beginSignInWithCodeAction(email: string) {
-  return beginSignInWithCode(email);
+  return local(await beginSignInWithCode(email));
 }
 
 export async function finishSignInWithCodeAction(codeId: string, code: string) {
   const r = await finishSignInWithCode(codeId, code);
-  if (!r.ok) return r;
+  if (!r.ok) return local(r);
   redirect("/home");
 }
 
@@ -51,7 +59,7 @@ export async function beginSignInAction() {
 
 export async function finishSignInAction(challengeId: string, response: AuthenticationResponseJSON) {
   const r = await finishSignIn(challengeId, response);
-  if (!r.ok) return r;
+  if (!r.ok) return local(r);
   redirect("/home");
 }
 

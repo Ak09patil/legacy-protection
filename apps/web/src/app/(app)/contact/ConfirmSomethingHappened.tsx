@@ -4,6 +4,7 @@ import { startAuthentication } from "@simplewebauthn/browser";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { buttonStyles } from "@/components/app/ui";
+import { useT } from "@/i18n/client";
 import { beginContactConfirmAction, finishContactConfirmAction } from "../actions";
 
 /**
@@ -11,6 +12,7 @@ import { beginContactConfirmAction, finishContactConfirmAction } from "../action
  * server for this exact action, before the plan's state can move.
  */
 export function ConfirmSomethingHappened({ ownerName, waitingDays }: { ownerName: string; waitingDays: number }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -21,7 +23,7 @@ export function ConfirmSomethingHappened({ ownerName, waitingDays }: { ownerName
   const [code, setCode] = useState("");
 
   const done = (r: { ok: boolean; message?: string }) => {
-    if (!r.ok) setError(r.message ?? "Nothing has changed.");
+    if (!r.ok) setError(r.message ?? t.contact.checkFailed);
     else router.refresh();
   };
 
@@ -39,7 +41,7 @@ export function ConfirmSomethingHappened({ ownerName, waitingDays }: { ownerName
         const response = await startAuthentication({ optionsJSON: begun.options });
         done(await finishContactConfirmAction({ method: "passkey", challengeId: begun.challengeId, response }));
       } catch {
-        setError("The check didn’t finish, so nothing has changed.");
+        setError(t.contact.checkFailed);
       }
     });
 
@@ -55,25 +57,25 @@ export function ConfirmSomethingHappened({ ownerName, waitingDays }: { ownerName
   if (!open) {
     return (
       <button type="button" onClick={() => setOpen(true)} className={`${buttonStyles.soft} mt-5`}>
-        I know something has happened
+        {t.contact.somethingHappened}
       </button>
     );
   }
 
   return (
     <div className="mt-5 rounded-[1.5rem] bg-white/90 p-5" role="group" aria-labelledby="confirm-h">
-      <p id="confirm-h" className="text-[17px] font-semibold">
-        Before you confirm
+      <p id="confirm-h" className="text-[18px] font-semibold">
+        {t.contact.beforeConfirm}
       </p>
-      <ul className="mt-2 list-disc space-y-1.5 pl-5 text-[16px] leading-snug text-ink-soft">
-        <li>We’ll tell {ownerName} straight away, by app and email.</li>
-        <li>Nothing happens for at least {waitingDays} days. Any sign of them stops it.</li>
-        <li>You won’t be able to move or receive any of their money.</li>
+      <ul className="mt-2 list-disc space-y-1.5 pl-5 text-[17px] leading-[1.5] text-ink-soft">
+        <li>{t.contact.beforeA(ownerName)}</li>
+        <li>{t.contact.beforeB(waitingDays)}</li>
+        <li>{t.contact.beforeC}</li>
       </ul>
       {codeId ? (
         <form onSubmit={submitCode} className="mt-4 space-y-3">
-          <label className="block text-[16px] font-semibold">
-            Enter the code we sent to {sentTo}
+          <label className="block text-[18px] font-semibold">
+            {t.contact.enterCode(sentTo)}
             <input
               inputMode="numeric"
               autoComplete="one-time-code"
@@ -81,23 +83,23 @@ export function ConfirmSomethingHappened({ ownerName, waitingDays }: { ownerName
               required
               value={code}
               onChange={(e) => setCode(e.target.value)}
-              className="mt-1.5 w-full rounded-2xl bg-white px-4 py-3 text-center font-mono text-[1.4rem] tracking-[0.4em] shadow-[inset_0_0_0_1.5px_rgba(16,36,27,0.12)]"
+              className="mt-1.5 min-h-[56px] w-full rounded-2xl bg-white px-4 py-3 text-center font-mono text-[1.4rem] tracking-[0.4em] shadow-[inset_0_0_0_1.5px_rgba(16,36,27,0.12)]"
             />
           </label>
           <button type="submit" disabled={pending} className={buttonStyles.primary}>
-            Confirm
+            {t.contact.confirmCode}
           </button>
         </form>
       ) : (
         <button type="button" disabled={pending} onClick={confirm} className={`${buttonStyles.primary} mt-4`}>
-          {pending ? "Checking it’s you…" : "Confirm it’s me"}
+          {pending ? t.contact.checkingYou : t.contact.confirmMe}
         </button>
       )}
       <button type="button" onClick={() => setOpen(false)} className={`${buttonStyles.quiet} mt-4 block w-full text-center`}>
-        Not now, I’ll keep trying to reach them
+        {t.contact.notNow}
       </button>
       {error && (
-        <p role="alert" className="mt-3 text-[15px] text-amber-ink">
+        <p role="alert" className="mt-3 text-[17px] text-amber-ink">
           {error}
         </p>
       )}

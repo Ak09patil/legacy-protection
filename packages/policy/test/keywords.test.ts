@@ -12,6 +12,26 @@ describe("keyword labeller", () => {
       expect.arrayContaining(["IMPERSONATION_FAMILY", "URGENCY"]),
     );
   });
+  it.each([
+    ["DRINGEND: Kaufen Sie heute Geschenkkarten, sonst wird Ihr Konto gesperrt.", ["GIFT_CARD_REQUEST", "URGENCY", "IMPERSONATION_TECH_SUPPORT"]],
+    ["Oma, ich bin's! Ich habe mein Handy verloren, das ist meine neue Nummer. Ich brauche sofort Geld.", ["IMPERSONATION_FAMILY", "URGENCY"]],
+    ["Hier ist die Polizei. Gegen Sie liegt ein Haftbefehl vor. Zahlen Sie in Bitcoin.", ["IMPERSONATION_GOVERNMENT", "CRYPTO_REQUEST"]],
+    ["URGENTE: compre tarjetas regalo hoy mismo o su cuenta será bloqueada.", ["GIFT_CARD_REQUEST", "URGENCY", "IMPERSONATION_TECH_SUPPORT"]],
+    ["Hola abuela, soy yo, tu nieto. Perdí el móvil y estoy en un apuro.", ["IMPERSONATION_FAMILY"]],
+    ["Le llamamos de la Agencia Tributaria. Pague con criptomonedas en un cajero de bitcoin.", ["IMPERSONATION_GOVERNMENT", "CRYPTO_REQUEST"]],
+  ])("INV-25 scam scripts are recognised in German and Spanish: %s", (text, labels) => {
+    expect(keywordLabels(text)).toEqual(expect.arrayContaining(labels));
+  });
+
+  it("leaves ordinary German and Spanish notes alone", () => {
+    expect(keywordLabels("Danke für die Hilfe diese Woche")).toEqual([]);
+    expect(keywordLabels("Miete für November")).toEqual([]);
+    expect(keywordLabels("Gracias por la compra, nos vemos el domingo")).toEqual([]);
+    expect(keywordLabels("Alquiler de noviembre")).toEqual([]);
+    // Words that contain a keyword aren't the keyword ("Opa" is not in "Opal", "hoy" is not in "Hoyos").
+    expect(keywordLabels("Ring mit Opal, Familie Hoyos")).toEqual([]);
+  });
+
   it("leaves ordinary notes alone", () => {
     expect(keywordLabels("Thanks for the groceries, see you Sunday")).toEqual([]);
     expect(keywordLabels("Rent for November")).toEqual([]);

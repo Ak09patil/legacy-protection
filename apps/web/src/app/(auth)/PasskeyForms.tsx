@@ -3,6 +3,8 @@
 import { startAuthentication, startRegistration, WebAuthnError } from "@simplewebauthn/browser";
 import { useId, useState, useTransition } from "react";
 import { buttonStyles } from "@/components/app/ui";
+import { useT } from "@/i18n/client";
+import type { Messages } from "@/i18n/messages";
 import {
   beginSignInAction,
   beginSignInWithCodeAction,
@@ -15,18 +17,17 @@ import {
 } from "./actions";
 
 const field =
-  "mt-1.5 w-full rounded-2xl border-0 bg-white/90 px-4 py-3.5 text-[17px] text-ink shadow-[inset_0_0_0_1.5px_rgba(16,36,27,0.12)] focus:shadow-[inset_0_0_0_2px_#2E5E45] focus:outline-none";
+  "mt-1.5 w-full min-h-[56px] rounded-2xl border-0 bg-white/90 px-4 py-3.5 text-[18px] text-ink shadow-[inset_0_0_0_1.5px_rgba(16,36,27,0.12)] focus:shadow-[inset_0_0_0_2px_#2E5E45] focus:outline-none";
 
-function friendly(e: unknown): string {
+function friendly(e: unknown, t: Messages): string {
   if (e instanceof Error && /NEXT_REDIRECT/.test(e.message)) throw e; // let Next.js navigate
-  if (e instanceof WebAuthnError && e.code === "ERROR_CEREMONY_ABORTED") return "That was cancelled. Nothing has changed.";
-  if (e instanceof Error && e.name === "NotAllowedError") return "The passkey was cancelled or isn’t available on this device. You can use an email code instead.";
-  return "This device couldn’t create a passkey. You can use an email code instead.";
+  if (e instanceof WebAuthnError && e.code === "ERROR_CEREMONY_ABORTED") return t.auth.errCancelled;
+  return t.auth.errPasskeyUnavailable;
 }
 
 function Alert({ children }: { children: React.ReactNode }) {
   return (
-    <p role="alert" className="rounded-2xl bg-[#FCEFD9] px-4 py-3 text-[16px] text-amber-ink">
+    <p role="alert" className="rounded-2xl bg-[#FCEFD9] px-4 py-3 text-[17px] text-amber-ink">
       {children}
     </p>
   );
@@ -34,6 +35,7 @@ function Alert({ children }: { children: React.ReactNode }) {
 
 /** Six-digit code entry, shared by sign-up and sign-in. */
 function CodeEntry({ email, onSubmit, pending }: { email: string; onSubmit: (code: string) => void; pending: boolean }) {
+  const t = useT();
   const [code, setCode] = useState("");
   const id = useId();
   return (
@@ -44,12 +46,10 @@ function CodeEntry({ email, onSubmit, pending }: { email: string; onSubmit: (cod
         onSubmit(code);
       }}
     >
-      <p className="text-[17px]">
-        We’ve sent a 6-digit code to <strong className="font-semibold">{email}</strong>. It works once, for 10 minutes.
-      </p>
+      <p className="text-[18px] leading-[1.55]">{t.auth.codeSent(email)}</p>
       <div>
-        <label htmlFor={id} className="block text-[16px] font-semibold">
-          Your code
+        <label htmlFor={id} className="block text-[18px] font-semibold">
+          {t.auth.yourCode}
         </label>
         <input
           id={id}
@@ -64,13 +64,14 @@ function CodeEntry({ email, onSubmit, pending }: { email: string; onSubmit: (cod
         />
       </div>
       <button type="submit" disabled={pending} className={buttonStyles.primary}>
-        {pending ? "Checking…" : "Continue"}
+        {pending ? t.auth.checking : t.common.continue}
       </button>
     </form>
   );
 }
 
 export function SignUpForm({ inviteToken, defaultName = "", defaultEmail = "" }: { inviteToken?: string; defaultName?: string; defaultEmail?: string }) {
+  const t = useT();
   const [name, setName] = useState(defaultName);
   const [email, setEmail] = useState(defaultEmail);
   const [error, setError] = useState<string | null>(null);
@@ -90,7 +91,7 @@ export function SignUpForm({ inviteToken, defaultName = "", defaultEmail = "" }:
         const done = await finishSignUpAction(begun.value.challengeId, response);
         if (done && !done.ok) setError(done.message);
       } catch (err) {
-        setError(friendly(err));
+        setError(friendly(err, t));
       }
     });
   };
@@ -116,7 +117,7 @@ export function SignUpForm({ inviteToken, defaultName = "", defaultEmail = "" }:
                 const r = await finishSignUpWithCodeAction(codeId, code);
                 if (r && !r.ok) setError(r.message);
               } catch (err) {
-                setError(friendly(err));
+                setError(friendly(err, t));
               }
             })
           }
@@ -129,14 +130,14 @@ export function SignUpForm({ inviteToken, defaultName = "", defaultEmail = "" }:
   return (
     <form onSubmit={withPasskey} className="space-y-4">
       <div>
-        <label htmlFor={nameId} className="block text-[16px] font-semibold">
-          Your name
+        <label htmlFor={nameId} className="block text-[18px] font-semibold">
+          {t.auth.yourName}
         </label>
         <input id={nameId} required autoComplete="name" className={field} value={name} onChange={(e) => setName(e.target.value)} />
       </div>
       <div>
-        <label htmlFor={emailId} className="block text-[16px] font-semibold">
-          Your email
+        <label htmlFor={emailId} className="block text-[18px] font-semibold">
+          {t.auth.yourEmail}
         </label>
         <input
           id={emailId}
@@ -150,18 +151,16 @@ export function SignUpForm({ inviteToken, defaultName = "", defaultEmail = "" }:
         />
       </div>
       <button type="submit" disabled={pending} className={buttonStyles.primary}>
-        {pending ? "Waiting…" : "Create my passkey"}
+        {pending ? t.auth.waiting : t.auth.createPasskey}
       </button>
-      <p className="text-center text-[15px] text-ink-soft">
-        Your phone or computer will ask for your fingerprint, face or screen lock. There’s no password to remember or steal.
-      </p>
+      <p className="text-center text-[17px] leading-[1.55] text-ink-soft">{t.auth.passkeyHelp}</p>
       <button
         type="button"
         disabled={pending || !name || !email}
         onClick={withCode}
         className={`${buttonStyles.quiet} block w-full text-center disabled:opacity-50`}
       >
-        Email me a code instead
+        {t.auth.emailCodeInstead}
       </button>
       {error && <Alert>{error}</Alert>}
     </form>
@@ -169,6 +168,7 @@ export function SignUpForm({ inviteToken, defaultName = "", defaultEmail = "" }:
 }
 
 export function SignInButton() {
+  const t = useT();
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<"passkey" | "email" | "code">("passkey");
   const [email, setEmail] = useState("");
@@ -185,7 +185,7 @@ export function SignInButton() {
         const done = await finishSignInAction(begun.challengeId, response);
         if (done && !done.ok) setError(done.message);
       } catch (err) {
-        setError(friendly(err));
+        setError(friendly(err, t));
       }
     });
 
@@ -202,7 +202,7 @@ export function SignInButton() {
                 const r = await finishSignInWithCodeAction(codeId, code);
                 if (r && !r.ok) setError(r.message);
               } catch (err) {
-                setError(friendly(err));
+                setError(friendly(err, t));
               }
             })
           }
@@ -228,16 +228,16 @@ export function SignInButton() {
         }}
       >
         <div>
-          <label htmlFor={emailId} className="block text-[16px] font-semibold">
-            Your email
+          <label htmlFor={emailId} className="block text-[18px] font-semibold">
+            {t.auth.yourEmail}
           </label>
           <input id={emailId} required type="email" autoComplete="email" className={field} value={email} onChange={(e) => setEmail(e.target.value)} />
         </div>
         <button type="submit" disabled={pending} className={buttonStyles.primary}>
-          Email me a code
+          {t.auth.emailMeCode}
         </button>
         <button type="button" onClick={() => setMode("passkey")} className={`${buttonStyles.quiet} block w-full text-center`}>
-          Use my passkey instead
+          {t.auth.usePasskeyInstead}
         </button>
         {error && <Alert>{error}</Alert>}
       </form>
@@ -247,10 +247,10 @@ export function SignInButton() {
   return (
     <div className="space-y-4">
       <button type="button" onClick={go} disabled={pending} className={buttonStyles.primary}>
-        {pending ? "Waiting for your passkey…" : "Sign in with my passkey"}
+        {pending ? t.auth.waiting : t.auth.signInPasskey}
       </button>
       <button type="button" onClick={() => setMode("email")} className={`${buttonStyles.quiet} block w-full text-center`}>
-        Email me a code instead
+        {t.auth.emailCodeInstead}
       </button>
       {error && <Alert>{error}</Alert>}
     </div>

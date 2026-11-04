@@ -17,7 +17,7 @@ import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 import { DEFAULT_POLICY, nextDue, type LifecycleState, type Phase } from "@lp/core";
 import { appendEvent, verifyChain } from "@lp/db/audit";
-import { applyEvent, outbox, toLifecycle, type StateRow } from "@lp/service";
+import { applyEvent, EMAILS, emailLocale, outbox, toLifecycle, type StateRow } from "@lp/service";
 export { applyEvent, outbox };
 import { PlanDocumentSchema, summarisePlan, type PlanDocument } from "@lp/policy";
 import { createInvite, currentUser, type Role, type SessionUser } from "./auth";
@@ -211,17 +211,9 @@ export async function confirmPlan(ctx: Ctx, candidate: unknown): Promise<Confirm
     if (active.rows[0]?.email.toLowerCase() !== doc.trustedContact.email) {
       const link = await createInvite(c, ctx.planId, ctx.user.id, "TRUSTED_CONTACT", doc.trustedContact.name, doc.trustedContact.email);
       links.push(link);
-      await outbox(
-        c,
-        ctx.planId,
-        null,
-        doc.trustedContact.email,
-        "INVITE_TRUSTED_CONTACT",
-        `${ctx.user.name} has asked you to be their trusted contact`,
-        `${ctx.user.name} uses Legacy Protection on their PayPal account and would like you to be their trusted contact. You’ll never be able to move or receive their money.\n\nAccept within 7 days: {{link}}`,
-        new Date(now),
-        link,
-      );
+      // Not a user yet, so in the language of the person inviting them.
+      const [subject, body] = EMAILS[emailLocale(ctx.user.locale)].inviteContact(ctx.user.name);
+      await outbox(c, ctx.planId, null, doc.trustedContact.email, "INVITE_TRUSTED_CONTACT", subject, body, new Date(now), link);
     }
     return { ok: true as const, version, inviteLinks: links };
   });
@@ -234,7 +226,8 @@ export async function inviteExecutor(ctx: Ctx, name: string, email: string): Pro
   if (!n || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) return { ok: false, message: "Please enter a name and a valid email." };
   const link = await tx(async (c) => {
     const l = await createInvite(c, ctx.planId, ctx.user.id, "EXECUTOR", n, e);
-    await outbox(c, ctx.planId, null, e, "INVITE_EXECUTOR", `${ctx.user.name} has named you as their executor`, `Accept within 7 days: {{link}}`, new Date(), l);
+    const [subject, body] = EMAILS[emailLocale(ctx.user.locale)].inviteExecutor(ctx.user.name);
+    await outbox(c, ctx.planId, null, e, "INVITE_EXECUTOR", subject, body, new Date(), l);
     await appendEvent(c, { planId: ctx.planId, at: new Date(), kind: "EXECUTOR_INVITED", actor: ctx.user.id, payload: {} });
     return l;
   });

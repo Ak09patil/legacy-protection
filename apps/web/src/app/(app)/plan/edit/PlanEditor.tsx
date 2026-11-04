@@ -4,13 +4,15 @@ import { useEffect, useId, useState, useTransition } from "react";
 import type { PlanDocument } from "@lp/policy";
 import { Heading, Panel, buttonStyles } from "@/components/app/ui";
 import { TimeZoneField } from "./TimeZoneField";
+import { useLocale, useT } from "@/i18n/client";
+import { fmtMoney } from "@/i18n/format";
 import { confirmPlanAction, draftFromWordsAction, previewPlanAction, suggestCarersAction } from "../../actions";
 
 type Carer = PlanDocument["obligations"][number];
 
 const field =
-  "mt-1.5 w-full rounded-2xl border-0 bg-white/90 px-4 py-3.5 text-[17px] text-ink shadow-[inset_0_0_0_1.5px_rgba(16,36,27,0.12)] focus:shadow-[inset_0_0_0_2px_#2E5E45] focus:outline-none";
-const label = "block text-[16px] font-semibold";
+  "mt-1.5 w-full min-h-[56px] rounded-2xl border-0 bg-white/90 px-4 py-3.5 text-[18px] text-ink shadow-[inset_0_0_0_1.5px_rgba(16,36,27,0.12)] focus:shadow-[inset_0_0_0_2px_#2E5E45] focus:outline-none";
+const label = "block text-[18px] font-semibold";
 
 function Field({ label: text, hint, children }: { label: string; hint?: string; children: (id: string) => React.ReactNode }) {
   const id = useId();
@@ -19,16 +21,19 @@ function Field({ label: text, hint, children }: { label: string; hint?: string; 
       <label htmlFor={id} className={label}>
         {text}
       </label>
-      {hint && <p className="text-[14px] text-ink-soft">{hint}</p>}
+      {hint && <p className="text-[16px] text-ink-soft">{hint}</p>}
       {children(id)}
     </div>
   );
 }
 
 const dollars = (minor: number) => String(minor / 100);
-const toMinor = (s: string) => Math.round(Number(s.replace(/[^0-9.]/g, "")) * 100) || 0;
+/** Accepts "42.50" and "42,50" alike. */
+const toMinor = (s: string) => Math.round(Number(s.replace(",", ".").replace(/[^0-9.]/g, "")) * 100) || 0;
 
 export function PlanEditor({ initial, detectTimeZone = false }: { initial: PlanDocument; detectTimeZone?: boolean }) {
+  const t = useT();
+  const locale = useLocale();
   const [plan, setPlan] = useState<PlanDocument>(initial);
   useEffect(() => {
     if (!detectTimeZone) return;
@@ -53,20 +58,20 @@ export function PlanEditor({ initial, detectTimeZone = false }: { initial: PlanD
         setSuggestions(fresh);
         setSuggestNote(
           fresh.length
-            ? `Found in ${r.source}. Check each one before adding.`
+            ? t.editor.suggestFound(r.source)
             : r.dropped.length
-              ? "We didn’t find anyone paid regularly enough to suggest. You can still add someone yourself."
-              : "We didn’t find anyone who looks like they work in your home.",
+              ? t.editor.suggestNoneRegular
+              : t.editor.suggestNone,
         );
       } else {
         setSuggestions(null);
         setSuggestNote(
           {
-            AI_OFF: "Suggestions from your payment history aren’t switched on here yet. Add people yourself below.",
-            NO_HISTORY: "There’s no payment history to look at yet. Add people yourself below.",
-            PROVIDER_UNAVAILABLE: "We couldn’t look at your payments just now. Try again in a moment, or add people yourself.",
-            INVALID_OUTPUT: "We couldn’t make sense of your payments safely. Add people yourself below.",
-            TOO_MANY_STEPS: "That took too long. Try again, or add people yourself.",
+            AI_OFF: t.editor.suggestOff,
+            NO_HISTORY: t.editor.suggestNoHistory,
+            PROVIDER_UNAVAILABLE: t.editor.suggestUnavailable,
+            INVALID_OUTPUT: t.editor.suggestInvalid,
+            TOO_MANY_STEPS: t.editor.suggestSlow,
           }[r.reason],
         );
       }
@@ -78,7 +83,7 @@ export function PlanEditor({ initial, detectTimeZone = false }: { initial: PlanD
         kind: "HOUSEHOLD_EMPLOYEE",
         payeeName: c.payeeName,
         payeeEmail: c.payeeEmail,
-        description: "help at home",
+        description: t.editor.helpAtHome,
         amountPerPaymentMinor: c.amountPerPaymentMinor,
         maxPerMonthMinor: Math.max(c.amountPerPaymentMinor, c.amountPerPaymentMinor * (c.cadence === "WEEKLY" ? 5 : c.cadence === "BIWEEKLY" ? 3 : 1)),
         currency: "USD",
@@ -106,11 +111,11 @@ export function PlanEditor({ initial, detectTimeZone = false }: { initial: PlanD
       if (r.ok) {
         setPlan(r.plan as PlanDocument);
         setSummary(null);
-        setNote("We filled in the form from what you wrote. Check every part before you continue.");
+        setNote(t.editor.wordsFilled);
       } else if (r.reason === "AI_OFF") {
-        setNote("Writing it in your own words isn’t switched on here yet. Use the steps below instead.");
+        setNote(t.editor.wordsOff);
       } else {
-        setNote("We couldn’t turn that into a plan safely. Use the steps below, or try different words.");
+        setNote(t.editor.wordsFailed);
       }
     });
 
@@ -136,9 +141,9 @@ export function PlanEditor({ initial, detectTimeZone = false }: { initial: PlanD
     <div className="space-y-5">
       <Panel aria-labelledby="words-title">
         <Heading as="h2" className="text-[1.45rem]">
-          <span id="words-title">Say it in your own words</span>
+          <span id="words-title">{t.editor.wordsTitle}</span>
         </Heading>
-        <p className="mt-1 text-[16px] text-ink-soft">For example: keep paying Maria $320 every Friday, stop my subscriptions, and Priya is the one to call.</p>
+        <p className="mt-1 text-[17px] text-ink-soft">{t.editor.wordsExample}</p>
         <textarea
           aria-labelledby="words-title"
           value={words}
@@ -147,10 +152,10 @@ export function PlanEditor({ initial, detectTimeZone = false }: { initial: PlanD
           className={`${field} resize-y leading-[1.5]`}
         />
         <button type="button" onClick={draft} disabled={pending || words.trim().length < 10} className={`${buttonStyles.soft} mt-4`}>
-          Fill in the form for me
+          {t.editor.fillForMe}
         </button>
         {note && (
-          <p role="status" className="mt-3 text-[15px] text-ink-soft">
+          <p role="status" className="mt-3 text-[17px] text-ink-soft">
             {note}
           </p>
         )}
@@ -158,14 +163,15 @@ export function PlanEditor({ initial, detectTimeZone = false }: { initial: PlanD
 
       <Panel aria-labelledby="contact-h" className="space-y-4">
         <Heading as="h2" className="text-[1.45rem]">
-          <span id="contact-h">Your trusted contact</span>
+          <span id="contact-h">{t.editor.personTitle}</span>
         </Heading>
-        <Field label="Their name">
+        <p className="text-[17px] text-ink-soft">{t.editor.personLead}</p>
+        <Field label={t.editor.theirName}>
           {(id) => (
             <input id={id} className={field} value={plan.trustedContact.name} onChange={(e) => edit((p) => ((p.trustedContact.name = e.target.value), p))} />
           )}
         </Field>
-        <Field label="Their email" hint="We’ll only use it to reach them about you.">
+        <Field label={t.editor.theirEmail} hint={t.editor.theirEmailHelp}>
           {(id) => (
             <input id={id} type="email" className={field} value={plan.trustedContact.email} onChange={(e) => edit((p) => ((p.trustedContact.email = e.target.value), p))} />
           )}
@@ -174,19 +180,20 @@ export function PlanEditor({ initial, detectTimeZone = false }: { initial: PlanD
 
       <Panel aria-labelledby="checkin-h" className="space-y-4">
         <Heading as="h2" className="text-[1.45rem]">
-          <span id="checkin-h">Checking in</span>
+          <span id="checkin-h">{t.editor.checkInTitle}</span>
         </Heading>
-        <Field label="How often should we check in?">
+        <p className="text-[17px] text-ink-soft">{t.editor.checkInLead}</p>
+        <Field label={t.editor.howOften}>
           {(id) => (
             <select id={id} className={field} value={plan.checkin.intervalDays} onChange={(e) => edit((p) => ((p.checkin.intervalDays = Number(e.target.value)), p))}>
-              <option value={3}>Every 3 days</option>
-              <option value={7}>Every week</option>
-              <option value={14}>Every 2 weeks</option>
-              <option value={30}>Every month</option>
+              <option value={3}>{t.editor.every3}</option>
+              <option value={7}>{t.editor.everyWeek}</option>
+              <option value={14}>{t.editor.every2Weeks}</option>
+              <option value={30}>{t.editor.everyMonth}</option>
             </select>
           )}
         </Field>
-        <Field label="At what time?">
+        <Field label={t.editor.atWhatTime}>
           {(id) => (
             <input
               id={id}
@@ -201,13 +208,13 @@ export function PlanEditor({ initial, detectTimeZone = false }: { initial: PlanD
           )}
         </Field>
         <TimeZoneField className={field} value={plan.checkin.timeZone} onChange={(tz) => edit((p) => ((p.checkin.timeZone = tz), p))} />
-        <Field label="If you miss check-ins and your contact confirms, how long should we wait before acting?" hint="Any sign of you during this time stops everything.">
+        <Field label={t.editor.waitTitle} hint={t.editor.waitHelp}>
           {(id) => (
             <select id={id} className={field} value={plan.waitingPeriodHours} onChange={(e) => edit((p) => ((p.waitingPeriodHours = Number(e.target.value)), p))}>
-              <option value={72}>3 days</option>
-              <option value={120}>5 days</option>
-              <option value={168}>1 week</option>
-              <option value={336}>2 weeks</option>
+              <option value={72}>{t.editor.wait3}</option>
+              <option value={120}>{t.editor.wait5}</option>
+              <option value={168}>{t.editor.wait7}</option>
+              <option value={336}>{t.editor.wait14}</option>
             </select>
           )}
         </Field>
@@ -216,18 +223,16 @@ export function PlanEditor({ initial, detectTimeZone = false }: { initial: PlanD
       <Panel aria-labelledby="carers-h" className="space-y-5">
         <div>
           <Heading as="h2" className="text-[1.45rem]">
-            <span id="carers-h">People who work for you</span>
+            <span id="carers-h">{t.editor.carersTitle}</span>
           </Heading>
-          <p className="mt-1 text-[16px] text-ink-soft">
-            Carers or helpers in your home we should keep paying for a while, so care doesn’t stop suddenly. Nobody else can be added here.
-          </p>
+          <p className="mt-1 text-[17px] text-ink-soft">{t.editor.carersLead}</p>
         </div>
         <div className="rounded-[1.5rem] bg-sage/40 p-4">
           <button type="button" onClick={suggest} disabled={pending} className={buttonStyles.soft}>
-            {pending ? "Looking at your payments…" : "Look at my payments and suggest"}
+            {pending ? t.editor.suggesting : t.editor.suggest}
           </button>
           {suggestNote && (
-            <p role="status" className="mt-3 text-[15px] text-ink-soft">
+            <p role="status" className="mt-3 text-[17px] text-ink-soft">
               {suggestNote}
             </p>
           )}
@@ -235,12 +240,14 @@ export function PlanEditor({ initial, detectTimeZone = false }: { initial: PlanD
             <ul className="mt-3 space-y-3">
               {suggestions.map((c) => (
                 <li key={c.payeeEmail} className="rounded-2xl bg-white/90 p-4">
-                  <p className="text-[17px] font-semibold">
-                    {c.payeeName}, ${(c.amountPerPaymentMinor / 100).toFixed(2)} {c.cadence === "WEEKLY" ? "a week" : c.cadence === "BIWEEKLY" ? "every 2 weeks" : "a month"}
+                  <p className="text-[18px] font-semibold">
+                    {t.editor.suggestLine(
+                      c.payeeName,
+                      fmtMoney(locale, c.amountPerPaymentMinor),
+                      c.cadence === "WEEKLY" ? t.editor.perWeek : c.cadence === "BIWEEKLY" ? t.editor.per2Weeks : t.editor.perMonth,
+                    )}
                   </p>
-                  <p className="mt-0.5 text-[15px] text-ink-soft">
-                    {c.why} You’ve paid them {c.payments} times.
-                  </p>
+                  <p className="mt-0.5 text-[17px] text-ink-soft">{t.editor.paidTimes(c.why, c.payments)}</p>
                   <button
                     type="button"
                     className={`${buttonStyles.quiet} mt-2`}
@@ -249,7 +256,7 @@ export function PlanEditor({ initial, detectTimeZone = false }: { initial: PlanD
                       setSuggestions((xs) => xs?.filter((x) => x.payeeEmail !== c.payeeEmail) ?? null);
                     }}
                   >
-                    Add {c.payeeName.split(" ")[0]} to my plan
+                    {t.editor.addToPlan(c.payeeName.split(" ")[0] ?? c.payeeName)}
                   </button>
                 </li>
               ))}
@@ -259,31 +266,31 @@ export function PlanEditor({ initial, detectTimeZone = false }: { initial: PlanD
         {plan.obligations.map((o, i) => (
           <div key={o.id} className="space-y-4 rounded-[1.5rem] bg-mist/70 p-4">
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Name">{(id) => <input id={id} className={field} value={o.payeeName} onChange={(e) => setCarer(i, { payeeName: e.target.value })} />}</Field>
-              <Field label="Their PayPal email">{(id) => <input id={id} type="email" className={field} value={o.payeeEmail} onChange={(e) => setCarer(i, { payeeEmail: e.target.value })} />}</Field>
-              <Field label="Each payment ($)">
+              <Field label={t.editor.name}>{(id) => <input id={id} className={field} value={o.payeeName} onChange={(e) => setCarer(i, { payeeName: e.target.value })} />}</Field>
+              <Field label={t.editor.theirPaypal}>{(id) => <input id={id} type="email" className={field} value={o.payeeEmail} onChange={(e) => setCarer(i, { payeeEmail: e.target.value })} />}</Field>
+              <Field label={t.editor.eachPayment}>
                 {(id) => <input id={id} inputMode="decimal" className={field} value={dollars(o.amountPerPaymentMinor)} onChange={(e) => setCarer(i, { amountPerPaymentMinor: toMinor(e.target.value) })} />}
               </Field>
-              <Field label="How often">
+              <Field label={t.editor.cadence}>
                 {(id) => (
                   <select id={id} className={field} value={o.cadence} onChange={(e) => setCarer(i, { cadence: e.target.value as Carer["cadence"] })}>
-                    <option value="WEEKLY">Every week</option>
-                    <option value="BIWEEKLY">Every 2 weeks</option>
-                    <option value="MONTHLY">Every month</option>
+                    <option value="WEEKLY">{t.editor.everyWeek}</option>
+                    <option value="BIWEEKLY">{t.editor.every2Weeks}</option>
+                    <option value="MONTHLY">{t.editor.everyMonth}</option>
                   </select>
                 )}
               </Field>
-              <Field label="Never more than this a month ($)">
+              <Field label={t.editor.neverMore}>
                 {(id) => <input id={id} inputMode="decimal" className={field} value={dollars(o.maxPerMonthMinor)} onChange={(e) => setCarer(i, { maxPerMonthMinor: toMinor(e.target.value) })} />}
               </Field>
-              <Field label="Keep paying for (days)">
+              <Field label={t.editor.keepPaying}>
                 {(id) => (
                   <input id={id} type="number" min={0} max={120} className={field} value={o.continueForDaysAfterActivation} onChange={(e) => setCarer(i, { continueForDaysAfterActivation: Number(e.target.value) })} />
                 )}
               </Field>
             </div>
             <button type="button" className={buttonStyles.quiet} onClick={() => edit((p) => ((p.obligations = p.obligations.filter((_, j) => j !== i)), p))}>
-              Remove {o.payeeName || "this person"}
+              {t.editor.remove(o.payeeName || t.editor.thisPerson)}
             </button>
           </div>
         ))}
@@ -298,7 +305,7 @@ export function PlanEditor({ initial, detectTimeZone = false }: { initial: PlanD
                   kind: "HOUSEHOLD_EMPLOYEE",
                   payeeName: "",
                   payeeEmail: "",
-                  description: "help at home",
+                  description: t.editor.helpAtHome,
                   amountPerPaymentMinor: 10000,
                   maxPerMonthMinor: 50000,
                   currency: "USD",
@@ -309,27 +316,27 @@ export function PlanEditor({ initial, detectTimeZone = false }: { initial: PlanD
               })
             }
           >
-            Add someone
+            {t.editor.addSomeone}
           </button>
         )}
       </Panel>
 
       <Panel aria-labelledby="act-h" className="space-y-3">
         <Heading as="h2" className="text-[1.45rem]">
-          <span id="act-h">If your plan ever starts</span>
+          <span id="act-h">{t.editor.startsTitle}</span>
         </Heading>
         {(
           [
-            ["cancelSubscriptions", "Stop my recurring subscriptions"],
-            ["cancelOpenInvoices", "Cancel invoices I’ve sent that haven’t been paid"],
+            ["cancelSubscriptions", t.editor.stopSubs],
+            ["cancelOpenInvoices", t.editor.cancelInvoices],
           ] as const
         ).map(([key, text]) => (
-          <label key={key} className="flex items-center gap-3 rounded-2xl bg-white/80 px-4 py-3.5 text-[17px]">
+          <label key={key} className="flex min-h-[56px] items-center gap-3 rounded-2xl bg-white/80 px-4 py-3.5 text-[18px]">
             <input type="checkbox" className="h-6 w-6 accent-green" checked={plan.onActivation[key]} onChange={(e) => edit((p) => ((p.onActivation[key] = e.target.checked), p))} />
             {text}
           </label>
         ))}
-        <label className="flex items-center gap-3 rounded-2xl bg-white/80 px-4 py-3.5 text-[17px]">
+        <label className="flex min-h-[56px] items-center gap-3 rounded-2xl bg-white/80 px-4 py-3.5 text-[18px]">
           <input
             type="checkbox"
             className="h-6 w-6 accent-green"
@@ -341,14 +348,14 @@ export function PlanEditor({ initial, detectTimeZone = false }: { initial: PlanD
               })
             }
           />
-          Let {plan.trustedContact.name || "my contact"} read my payment notes
+          {t.editor.letRead(plan.trustedContact.name || t.editor.myPerson)}
         </label>
-        <p className="text-[15px] text-ink-soft">Your remaining balance always stays safe for your estate. That part can’t be changed.</p>
+        <p className="text-[17px] text-ink-soft">{t.editor.balanceSafe}</p>
       </Panel>
 
       {issues.length > 0 && (
-        <div role="alert" className="rounded-[1.5rem] bg-[#FCEFD9] px-5 py-4 text-[16px] text-amber-ink">
-          <p className="font-semibold">A few things need fixing before we can save this:</p>
+        <div role="alert" className="rounded-[1.5rem] bg-[#FCEFD9] px-5 py-4 text-[17px] text-amber-ink">
+          <p className="font-semibold">{t.editor.fixFirst}</p>
           <ul className="mt-2 list-disc space-y-1 pl-5">
             {issues.map((i) => (
               <li key={i}>{i}</li>
@@ -360,23 +367,23 @@ export function PlanEditor({ initial, detectTimeZone = false }: { initial: PlanD
       {summary ? (
         <Panel aria-labelledby="review-h" className="space-y-4">
           <Heading as="h2" className="text-[1.45rem]">
-            <span id="review-h">Here’s what we’ll do</span>
+            <span id="review-h">{t.editor.reviewTitle}</span>
           </Heading>
           <ul className="space-y-3">
             {summary.map((line) => (
-              <li key={line} className="flex gap-3 text-[17px] leading-[1.55]">
+              <li key={line} className="flex gap-3 text-[18px] leading-[1.6]">
                 <span aria-hidden="true" className="mt-2 h-2.5 w-2.5 shrink-0 rounded-full bg-mint" />
                 {line}
               </li>
             ))}
           </ul>
           <button type="button" onClick={confirm} disabled={pending} className={buttonStyles.primary}>
-            Confirm my plan
+            {t.editor.confirm}
           </button>
         </Panel>
       ) : (
         <button type="button" onClick={review} disabled={pending} className={buttonStyles.primary}>
-          Review my plan
+          {t.editor.review}
         </button>
       )}
     </div>

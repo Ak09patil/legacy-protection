@@ -15,6 +15,7 @@ import { decide, evaluateRules, keywordLabels, RULES_VERSION, type ModelOutcome,
 import { z } from "zod";
 import { db, tx } from "./db";
 import { applyEvent, outbox, snapshot, type Ctx } from "./plans";
+import { EMAILS, emailLocale, emailMoney } from "@lp/service";
 import { assessPayment } from "./risk";
 import { webVault } from "./vault";
 
@@ -108,18 +109,16 @@ export async function actOnPayment(ctx: Ctx, id: string, action: PaymentAction):
     });
 
     if (action === "ask-contact" || action === "send-anyway") {
-      const k = await c.query<{ id: string; email: string }>(
-        `SELECT u.id, u.email FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.plan_id = $1 AND m.role = 'TRUSTED_CONTACT' AND m.revoked_at IS NULL`,
+      const k = await c.query<{ id: string; email: string; locale: string }>(
+        `SELECT u.id, u.email, u.locale FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.plan_id = $1 AND m.role = 'TRUSTED_CONTACT' AND m.revoked_at IS NULL`,
         [ctx.planId],
       );
       const contact = k.rows[0];
       if (contact) {
-        const first = ctx.user.name.split(" ")[0];
-        const amount = (Number(p.amount_minor) / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
-        const [subject, body] =
-          action === "ask-contact"
-            ? [`${first} would like to talk about a payment`, `We paused a payment of ${amount} from ${first} to someone new, and ${first} asked to talk it over with you. Please give them a call.`]
-            : [`${first} chose to send a paused payment`, `${first} chose to send ${amount} to someone new that we had paused. It goes in 24 hours unless they change their mind. If this looks like a scam, please call them now.`];
+        const first = ctx.user.name.split(" ")[0] ?? ctx.user.name;
+        const lang = emailLocale(contact.locale);
+        const amount = emailMoney(lang, p.amount_minor);
+        const [subject, body] = action === "ask-contact" ? EMAILS[lang].paymentAskContact(first, amount) : EMAILS[lang].paymentSendAnyway(first, amount);
         await outbox(c, ctx.planId, contact.id, contact.email, `PAYMENT_${action.toUpperCase().replace("-", "_")}`, subject, body, now);
       }
     }
@@ -187,6 +186,9 @@ export async function createPayment(ctx: Ctx, input: unknown): Promise<CreateRes
 
   // Scam language: keywords always; the AI labeller adds to them when configured.
   let labels: TextLabel[] = keywordLabels(p.note);
+  // Being asked for gift cards or crypto is the signal itself, with or without a message to read.
+  if (p.method === "gift_card" && !labels.includes("GIFT_CARD_REQUEST")) labels.push("GIFT_CARD_REQUEST");
+  if (p.method === "crypto" && !labels.includes("CRYPTO_REQUEST")) labels.push("CRYPTO_REQUEST");
   // If the AI reader of the payee's message is down, keywords still apply and
   // the owner is asked to confirm (REVIEW): money never moves on a payment we
   // couldn't fully read, but an AI outage doesn't freeze everyone's payments.

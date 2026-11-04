@@ -20,7 +20,7 @@ async function person(b) {
   await E.goto(B + '/signup');
   await E.getByLabel('Your name').fill('Eleanor Hughes');
   await E.getByLabel('Your email').fill('eleanor@example.com');
-  await E.getByRole('button', { name: 'Create my passkey' }).click();
+  await E.getByRole('button', { name: 'Use my fingerprint or face' }).click();
   await E.waitForURL('**/plan/edit');
   await E.getByLabel('Their name', { exact: true }).fill('Priya');
   await E.getByLabel('Their email', { exact: true }).fill('priya@example.com');
@@ -29,14 +29,14 @@ async function person(b) {
   await E.getByLabel('Their PayPal email').fill('maria@example.com');
   await E.getByLabel('Each payment ($)').fill('320');
   await E.getByLabel('Never more than this a month ($)').fill('1400');
-  await E.getByRole('button', { name: 'Review my plan' }).click();
-  await E.getByRole('button', { name: 'Confirm my plan' }).click();
+  await E.getByRole('button', { name: 'Read my plan back to me' }).click();
+  await E.getByRole('button', { name: 'Yes, this is my plan' }).click();
   await E.waitForURL('**/plan?confirmed=*');
-  await E.getByRole('button', { name: /Get a new invite link for Priya/ }).click();
+  await E.getByRole('button', { name: /Get a new invitation link for Priya/ }).click();
   const link = (await E.getByTestId('invite-link').textContent()).trim();
   const P = await person(b);
   await P.goto(link);
-  await P.getByRole('button', { name: 'Create my passkey' }).click();
+  await P.getByRole('button', { name: 'Use my fingerprint or face' }).click();
   await P.waitForURL('**/contact');
   const planId = sql("select plan_id from plan_state limit 1");
   await sleep(1500);
@@ -48,7 +48,7 @@ async function person(b) {
   console.log('after 11 silent days:', sql(`select phase||' missed='||checkins_missed from plan_state`), '| contact told:', sql(`select string_agg(kind, ',') from notifications where kind like 'CONTACT_%'`));
   await P.goto(B + '/contact');
   await P.getByRole('button', { name: 'I know something has happened' }).click();
-  await P.getByRole('button', { name: 'Confirm it’s me' }).click();
+  await P.getByRole('button', { name: 'Yes, I’m sure' }).click();
   await P.getByRole('heading', { name: 'We’ve told Eleanor' }).waitFor({ timeout: 10000 });
   await sleep(2000);
   console.log('after Priya confirms:', sql(`select phase from plan_state`));

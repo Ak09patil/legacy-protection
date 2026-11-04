@@ -7,6 +7,7 @@
  * about it can never disagree.
  */
 
+import { EMAILS, emailLocale } from "./emails.js";
 import { randomUUID } from "node:crypto";
 import { initialState, transition, type LifecycleEvent, type LifecycleState, type Phase } from "@lp/core";
 import { appendEvent } from "@lp/db/audit";
@@ -88,14 +89,14 @@ export async function applyEvent(
 /** Turns state-machine effects into outbox rows, in the same transaction. */
 export async function queueEffects(c: Tx, planId: string, effects: Effects, at: Date) {
   if (effects.length === 0) return;
-  const snap = await c.query<{ owner_id: string; owner_name: string; owner_email: string }>(
-    `SELECT u.id AS owner_id, u.display_name AS owner_name, u.email AS owner_email FROM plans p JOIN users u ON u.id = p.owner_id WHERE p.id = $1`,
+  const snap = await c.query<{ owner_id: string; owner_name: string; owner_email: string; owner_locale: string }>(
+    `SELECT u.id AS owner_id, u.display_name AS owner_name, u.email AS owner_email, u.locale AS owner_locale FROM plans p JOIN users u ON u.id = p.owner_id WHERE p.id = $1`,
     [planId],
   );
   const o = snap.rows[0]!;
-  const first = o.owner_name.split(" ")[0];
-  const contact = await c.query<{ id: string; display_name: string; email: string }>(
-    `SELECT u.id, u.display_name, u.email FROM memberships m JOIN users u ON u.id = m.user_id
+  const first = o.owner_name.split(" ")[0] ?? o.owner_name;
+  const contact = await c.query<{ id: string; display_name: string; email: string; locale: string }>(
+    `SELECT u.id, u.display_name, u.email, u.locale FROM memberships m JOIN users u ON u.id = m.user_id
       WHERE m.plan_id = $1 AND m.role = 'TRUSTED_CONTACT' AND m.revoked_at IS NULL`,
     [planId],
   );
@@ -103,16 +104,18 @@ export async function queueEffects(c: Tx, planId: string, effects: Effects, at: 
   const origin = process.env.APP_ORIGIN ?? "http://localhost:3000";
   for (const e of effects) {
     if (e.type === "NOTIFY_OWNER_ALL_CHANNELS") {
+      const m = EMAILS[emailLocale(o.owner_locale)];
       const text = {
-        CONTACT_CONFIRMED: [`Are you all right, ${first}?`, `${k?.display_name ?? "Your trusted contact"} told us something may have happened to you. If you’re all right, open Legacy Protection and tap “I’m here”. Nothing will happen if you do.\n\n${origin}/home`],
-        WAITING_STARTED: [`Your plan will start unless we hear from you`, `If you’re all right, one tap stops everything: ${origin}/home`],
-        ACTIVATED: [`Your plan has started`, `Your plan started because we didn’t hear from you. ${origin}/home`],
+        CONTACT_CONFIRMED: m.ownerContactConfirmed(first, k?.display_name ?? null, origin),
+        WAITING_STARTED: m.ownerWaitingStarted(origin),
+        ACTIVATED: m.ownerActivated(origin),
       }[e.reason];
       await outbox(c, planId, o.owner_id, o.owner_email, `OWNER_${e.reason}`, text[0]!, text[1]!, at);
     } else if (e.type === "NOTIFY_CONTACT" && k) {
+      const m = EMAILS[emailLocale(k.locale)];
       const text = {
-        ACTIVATION_CANCELLED_BY_OWNER: [`${first} is all right`, `${first} checked in, so nothing will happen. Thank you for looking out for them.`],
-        ACTIVATED: [`${first}’s plan has started`, `Their balance is safe for their estate, and their executor has what they need. ${origin}/contact`],
+        ACTIVATION_CANCELLED_BY_OWNER: m.contactOwnerIsOkay(first),
+        ACTIVATED: m.contactActivated(first, origin),
       }[e.reason];
       await outbox(c, planId, k.id, k.email, `CONTACT_${e.reason}`, text[0]!, text[1]!, at);
     }
