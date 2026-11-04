@@ -11,11 +11,15 @@
   "dependencies": {
     "@fontsource-variable/fraunces": "^5.3.0",
     "@fontsource-variable/manrope": "^5.3.0",
+    "@lp/ai": "workspace:*",
+    "@lp/core": "workspace:*",
+    "@lp/policy": "workspace:*",
     "@react-three/fiber": "^9.8.2",
     "framer-motion": "^14.9.1",
     "next": "15.5.28",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "server-only": "^0.0.1",
     "three": "^0.187.0"
   },
   "devDependencies": {

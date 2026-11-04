@@ -29,6 +29,15 @@ importers:
       '@fontsource-variable/manrope':
         specifier: ^5.3.0
         version: 5.3.0
+      '@lp/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
+      '@lp/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@lp/policy':
+        specifier: workspace:*
+        version: link:../../packages/policy
       '@react-three/fiber':
         specifier: ^9.8.2
         version: 9.8.2(@types/react@19.3.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(three@0.187.0)
@@ -44,6 +53,9 @@ importers:
       react-dom:
         specifier: 19.1.0
         version: 19.1.0(react@19.1.0)
+      server-only:
+        specifier: ^0.0.1
+        version: 0.0.1
       three:
         specifier: ^0.187.0
         version: 0.187.0
@@ -2805,6 +2817,9 @@ packages:
     resolution: {integrity: sha512-9lpSSU4Mly3mrtruwLs1eLK6+gzbzqeBFwRNjIjE+9LuDpWdYctrQlQ3ej1Ilgi7gknpsTRnPoLP8DpCHqHIJw==}
     engines: {node: '>=10'}
     hasBin: true
+
+  server-only@0.0.1:
+    resolution: {integrity: sha512-qepMx2JxAa5jjfzxG79yPPq+8BuFToHd1hm7kI+Z4zAq1ftQiP7HcxMhDDItrbtwVeLg/cY2JnKnrcFkmiswNA==}
 
   set-function-length@1.2.2:
     resolution: {integrity: sha512-pgRc4hJ4/sNjWCSS9AmnS40x3bNMDTknHgL5UaMBTMyJnU90EgWh1Rz+MC9eFu4BuN/UwZjKQuY/1v3rM7HMfg==}
@@ -5911,6 +5926,8 @@ snapshots:
   semver@6.3.2: {}
 
   semver@7.8.6: {}
+
+  server-only@0.0.1: {}
 
   set-function-length@1.2.2:
     dependencies:

@@ -79,3 +79,14 @@ body {
   html { scroll-behavior: auto; }
   .aura-field span { animation: none; }
 }
+
+/* Breathing protection rings (app screens). */
+.breathing-rings { position: relative; }
+.breathing-rings i { position: absolute; inset: 0; margin: auto; border-radius: 50%; }
+.breathing-rings .r1 { background: radial-gradient(circle, rgba(211,244,209,0) 55%, rgba(211,244,209,.9) 70%, rgba(211,244,209,0) 100%); animation: breathe 7s ease-in-out infinite; }
+.breathing-rings .r2 { width: 74%; height: 74%; background: radial-gradient(circle, #DDF3D9 0%, #B9DDBF 100%); animation: breathe 7s ease-in-out .6s infinite; }
+.breathing-rings .r3 { width: 48%; height: 48%; background: radial-gradient(circle, #CBEAD3 0%, #9FCFAE 100%); animation: breathe 7s ease-in-out 1.2s infinite; }
+.breathing-rings .r4 { width: 24%; height: 24%; background: radial-gradient(circle, #FFFFFF 0%, #FFF6E6 70%); box-shadow: 0 0 40px 12px rgba(255,246,230,.9); animation: breathe 7s ease-in-out 1.8s infinite; }
+.breathing-rings.is-paused .r2 { background: radial-gradient(circle, #FBEBD0 0%, #F2D3A0 100%); }
+@keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.045); } }
+@media (prefers-reduced-motion: reduce) { .breathing-rings i { animation: none; } }
