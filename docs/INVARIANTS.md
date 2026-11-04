@@ -166,6 +166,12 @@ There are no passwords. People sign in with passkeys only. Session and invite to
 - **Enforced in:** `packages/db/migrations/002_accounts.sql` (schema), `apps/web/src/server/auth.ts`.
 - **Verified by:** `INV-22 only token hashes are stored`, `INV-22 a plan has at most one active trusted contact`.
 
+### INV-23 — A model with no baseline can ask, not hold
+When the owner has fewer than 10 past payments, the behaviour model has nothing to compare against. Its signal can ask the owner to confirm (REVIEW) but cannot hold a payment on its own. Rules, scam-language labels and network signals can still hold. Without this, every new user's first payments were held, which trains people to click through warnings.
+
+- **Enforced in:** `packages/policy/src/decide.ts` (`COLD_START_MIN_HISTORY`).
+- **Verified by:** `INV-23 cold start caps behaviour-only model signals at REVIEW`, `INV-23 rules still hold during cold start`.
+
 ---
 
 ## Change log
@@ -174,3 +180,4 @@ There are no passwords. People sign in with passkeys only. Session and invite to
 |---|---|---|
 | 2026-11-02 | Initial set INV-01 to INV-21 | ADR-0001 to ADR-0005 |
 | 2026-11-04 | Added INV-22 (accounts and sign-in) | — |
+| 2026-11-04 | Added INV-23 (cold start), found in end-to-end testing | — |

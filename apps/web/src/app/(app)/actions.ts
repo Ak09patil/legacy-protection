@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { beginStepUp, beginStepUpWithCode, finishStepUp, finishStepUpWithCode, hasPasskey } from "@/server/auth";
 import { tx } from "@/server/db";
-import { actOnPayment, type PaymentAction } from "@/server/payments";
+import { actOnPayment, createPayment, type PaymentAction } from "@/server/payments";
 import { applyEvent, checkIn, confirmPlan, inviteExecutor, reissueInvite, requireRole, saveDraft } from "@/server/plans";
 import { PlanDocumentSchema, summarisePlan } from "@lp/policy";
 
@@ -100,7 +100,7 @@ export async function draftFromWordsAction(words: string, timeZone: string): Pro
   return { ok: true, plan: r.plan };
 }
 
-const PAYMENT_ACTIONS: readonly PaymentAction[] = ["stop", "ask-contact", "send-anyway", "cancel-release"];
+const PAYMENT_ACTIONS: readonly PaymentAction[] = ["confirm", "stop", "ask-contact", "send-anyway", "cancel-release"];
 
 export async function paymentAction(formData: FormData): Promise<void> {
   const ctx = await requireRole("OWNER");
@@ -115,4 +115,12 @@ export async function paymentAction(formData: FormData): Promise<void> {
 export async function reissueInviteAction(role: "TRUSTED_CONTACT" | "EXECUTOR") {
   const ctx = await requireRole("OWNER");
   return reissueInvite(ctx, role);
+}
+
+export async function createPaymentAction(input: unknown) {
+  const ctx = await requireRole("OWNER");
+  const r = await createPayment(ctx, input);
+  if (!r.ok) return r;
+  revalidatePath("/home");
+  redirect(`/payments/${r.id}`);
 }

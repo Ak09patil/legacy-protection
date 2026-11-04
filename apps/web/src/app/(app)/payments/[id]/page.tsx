@@ -21,6 +21,7 @@ function Action({ id, action, label, variant }: { id: string; action: string; la
 
 const HISTORY: Record<string, string> = {
   PAYMENT_DECIDED: "Checked before any money moved.",
+  PAYMENT_CONFIRM: "You confirmed it was right, so we sent it.",
   PAYMENT_STOP: "You chose not to send it. No money left your account.",
   PAYMENT_ASK_CONTACT: "You asked to talk it over with your trusted contact.",
   PAYMENT_SEND_ANYWAY: "You chose to send it. It waits 24 hours first.",
@@ -47,10 +48,18 @@ export default async function PaymentPage({ params }: { params: Promise<{ id: st
         Back home
       </Link>
 
-      {p.decision?.level === "PASS" ? (
+      {p.status === "CONFIRM_NEEDED" || (p.decision?.level === "REVIEW" && p.status === "SENT") ? (
+        <div>
+          <span className="inline-flex items-center gap-2 rounded-full bg-[#FCEFD9] px-4 py-1.5 text-[14px] font-semibold text-amber-ink">
+            <span className="h-2 w-2 rounded-full bg-amber" aria-hidden="true" />
+            {p.status === "CONFIRM_NEEDED" ? "Just checking" : "Confirmed by you"}
+          </span>
+          <Heading className="mt-4 text-[clamp(1.9rem,6vw,2.4rem)]">{p.status === "CONFIRM_NEEDED" ? "Is this payment right?" : "Sent, as you confirmed"}</Heading>
+        </div>
+      ) : p.decision?.level === "PASS" ? (
         <div>
           <Heading className="text-[clamp(1.9rem,6vw,2.4rem)]">This payment looked normal</Heading>
-          <p className="mt-2 text-[17px] text-ink-soft">We checked it and sent it straight away.</p>
+          <p className="mt-2 text-[17px] text-ink-soft">We checked it before any money moved, and it’s on its way.</p>
         </div>
       ) : (
         <div>
@@ -83,7 +92,7 @@ export default async function PaymentPage({ params }: { params: Promise<{ id: st
       {reasons.length > 0 && (
         <Panel aria-labelledby="why-title">
           <Heading as="h2" className="text-[1.5rem]">
-            <span id="why-title">Why we paused it</span>
+            <span id="why-title">{p.status === "CONFIRM_NEEDED" ? "Why we’re asking" : "Why we paused it"}</span>
           </Heading>
           <ul className="mt-3 space-y-3">
             {reasons.map((r) => (
@@ -94,6 +103,13 @@ export default async function PaymentPage({ params }: { params: Promise<{ id: st
             ))}
           </ul>
         </Panel>
+      )}
+
+      {p.status === "CONFIRM_NEEDED" && (
+        <div className="space-y-3">
+          <Action id={p.id} action="confirm" label="Yes, send it" variant="primary" />
+          <Action id={p.id} action="stop" label="No, don’t send it" variant="soft" />
+        </div>
       )}
 
       {open && (

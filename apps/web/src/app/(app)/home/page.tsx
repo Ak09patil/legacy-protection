@@ -34,7 +34,7 @@ export default async function HomePage() {
     `SELECT id, payee_name, amount_minor, status, created_at FROM payments WHERE plan_id = $1 ORDER BY created_at DESC LIMIT 6`,
     [ctx.planId],
   );
-  const attention = payments.rows.find((p) => ["PAUSED", "WAITING_FOR_CONTACT", "RELEASE_SCHEDULED"].includes(p.status));
+  const attention = payments.rows.find((p) => ["CONFIRM_NEEDED", "PAUSED", "WAITING_FOR_CONTACT", "RELEASE_SCHEDULED"].includes(p.status));
   const phase = s.state.phase;
   const started = phase === "ACTIVATED" || phase === "EXECUTING" || phase === "COMPLETED";
   const worried = phase === "WAITING" || s.state.contactConfirmed || s.state.checkinsMissed;
@@ -81,7 +81,9 @@ export default async function HomePage() {
           href={`/payments/${attention.id}`}
           className="block rounded-[2rem] bg-[#FDF3E3]/90 p-6 shadow-[0_24px_60px_-38px_rgba(107,63,6,0.45)] backdrop-blur-2xl transition-transform duration-300 ease-calm hover:-translate-y-0.5"
         >
-          <p className="text-[15px] font-semibold text-amber-ink">We paused a payment to check it with you</p>
+          <p className="text-[15px] font-semibold text-amber-ink">
+            {attention.status === "CONFIRM_NEEDED" ? "Is this payment right?" : "We paused a payment to check it with you"}
+          </p>
           <p className="mt-1 font-display text-[1.6rem] leading-tight [font-variation-settings:'SOFT'_100]">
             {money(Number(attention.amount_minor))} to {attention.payee_name}
           </p>
@@ -129,6 +131,10 @@ export default async function HomePage() {
         )}
       </Panel>
 
+      <ButtonLink href="/payments/new" variant="soft">
+        Send money
+      </ButtonLink>
+
       <p className="text-center">
         <Link href="/plan" className="text-[17px] font-semibold text-green underline decoration-mint decoration-2 underline-offset-[6px]">
           See or change your plan
@@ -143,6 +149,8 @@ function StatusPill({ status }: { status: string }) {
     case "SENT":
     case "RELEASED":
       return <Pill tone="safe">Sent</Pill>;
+    case "CONFIRM_NEEDED":
+      return <Pill tone="paused">Check with you</Pill>;
     case "PAUSED":
       return <Pill tone="paused">Paused</Pill>;
     case "WAITING_FOR_CONTACT":
