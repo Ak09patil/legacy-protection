@@ -3,6 +3,7 @@
 import { useEffect, useId, useState, useTransition } from "react";
 import type { PlanDocument } from "@lp/policy";
 import { Heading, Panel, buttonStyles } from "@/components/app/ui";
+import { TimeZoneField } from "./TimeZoneField";
 import { confirmPlanAction, draftFromWordsAction, previewPlanAction, suggestCarersAction } from "../../actions";
 
 type Carer = PlanDocument["obligations"][number];
@@ -199,7 +200,7 @@ export function PlanEditor({ initial, detectTimeZone = false }: { initial: PlanD
             />
           )}
         </Field>
-        <p className="-mt-2 text-[14px] text-ink-soft">Times are in {plan.checkin.timeZone.replaceAll("_", " ")}.</p>
+        <TimeZoneField className={field} value={plan.checkin.timeZone} onChange={(tz) => edit((p) => ((p.checkin.timeZone = tz), p))} />
         <Field label="If you miss check-ins and your contact confirms, how long should we wait before acting?" hint="Any sign of you during this time stops everything.">
           {(id) => (
             <select id={id} className={field} value={plan.waitingPeriodHours} onChange={(e) => edit((p) => ((p.waitingPeriodHours = Number(e.target.value)), p))}>
