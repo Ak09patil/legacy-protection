@@ -9,3 +9,6 @@ node_modules/
 dist/
 *.tsbuildinfo
 services/risk/artifacts/
+
+# Python packaging leftovers
+*.egg-info/

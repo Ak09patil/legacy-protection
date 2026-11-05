@@ -1,4 +1,9 @@
 packages:
-  - "packages/*"
-  - "apps/*"
-  - "workers/*"
+  - packages/*
+  - apps/*
+  - workers/*
+
+onlyBuiltDependencies:
+  - '@swc/core'
+  - esbuild
+  - protobufjs
