@@ -23,10 +23,11 @@ export function emailMoney(locale: EmailLocale, minor: number | string, currency
 }
 
 interface Templates {
-  checkinReminder: (origin: string) => Email;
+  /** Bodies with {{link}} carry a one-tap "I'm okay" link, filled in at delivery. */
+  checkinReminder: () => Email;
   contactCheckinMissed: (owner: string, origin: string) => Email;
-  ownerContactConfirmed: (owner: string, contact: string | null, origin: string) => Email;
-  ownerWaitingStarted: (origin: string) => Email;
+  ownerContactConfirmed: (owner: string, contact: string | null) => Email;
+  ownerWaitingStarted: () => Email;
   ownerActivated: (origin: string) => Email;
   contactOwnerIsOkay: (owner: string) => Email;
   contactActivated: (owner: string, origin: string) => Email;
@@ -38,16 +39,16 @@ interface Templates {
 }
 
 const en: Templates = {
-  checkinReminder: (o) => ["Are you okay?", `One tap lets us know you’re well:\n\n${o}/home`],
+  checkinReminder: () => ["Are you okay?", `One tap on this link lets us know you’re well. You don’t need to sign in.\n\n{{link}}`],
   contactCheckinMissed: (n, o) => [
     `We haven’t heard from ${n}`,
     `${n} hasn’t answered us. That can happen for ordinary reasons.\n\nPlease try to reach them first: call, send a message, or ask someone nearby to look in.\n\nIf you know something has happened, you can tell us here: ${o}/contact`,
   ],
-  ownerContactConfirmed: (n, k, o) => [
+  ownerContactConfirmed: (n, k) => [
     `Are you okay, ${n}?`,
-    `${k ?? "Your trusted person"} told us something may have happened to you. If you’re okay, open Legacy Protection and tap “I’m okay”. Then nothing will happen.\n\n${o}/home`,
+    `${k ?? "Your trusted person"} told us something may have happened to you. If you’re okay, tap this link. Then nothing will happen. You don’t need to sign in.\n\n{{link}}`,
   ],
-  ownerWaitingStarted: (o) => ["Your plan will start unless we hear from you", `If you’re okay, one tap stops everything:\n\n${o}/home`],
+  ownerWaitingStarted: () => ["Your plan will start unless we hear from you", `If you’re okay, one tap on this link stops everything. You don’t need to sign in.\n\n{{link}}`],
   ownerActivated: (o) => ["Your plan has started", `Your plan started because we didn’t hear from you. Your money is safe for your family.\n\n${o}/home`],
   contactOwnerIsOkay: (n) => [`${n} is okay`, `${n} let us know they’re well, so nothing will happen. Thank you for looking out for them.`],
   contactActivated: (n, o) => [`${n}’s plan has started`, `Their money stays safe for their family, and the person handling their affairs has what they need.\n\n${o}/contact`],
@@ -68,16 +69,16 @@ const en: Templates = {
 };
 
 const de: Templates = {
-  checkinReminder: (o) => ["Geht es Ihnen gut?", `Ein Tippen sagt uns, dass es Ihnen gut geht:\n\n${o}/home`],
+  checkinReminder: () => ["Geht es Ihnen gut?", `Ein Tippen auf diesen Link sagt uns, dass es Ihnen gut geht. Sie müssen sich nicht anmelden.\n\n{{link}}`],
   contactCheckinMissed: (n, o) => [
     `Wir haben nichts von ${n} gehört`,
     `${n} hat uns nicht geantwortet. Das kann ganz normale Gründe haben.\n\nVersuchen Sie bitte zuerst, die Person zu erreichen: anrufen, eine Nachricht schicken oder jemanden in der Nähe bitten, vorbeizuschauen.\n\nWenn Sie wissen, dass etwas passiert ist, können Sie es uns hier sagen: ${o}/contact`,
   ],
-  ownerContactConfirmed: (n, k, o) => [
+  ownerContactConfirmed: (n, k) => [
     `Geht es Ihnen gut, ${n}?`,
-    `${k ?? "Ihre Vertrauensperson"} hat uns gesagt, dass Ihnen vielleicht etwas passiert ist. Wenn es Ihnen gut geht, öffnen Sie Legacy Protection und tippen Sie auf „Mir geht es gut“. Dann passiert nichts.\n\n${o}/home`,
+    `${k ?? "Ihre Vertrauensperson"} hat uns gesagt, dass Ihnen vielleicht etwas passiert ist. Wenn es Ihnen gut geht, tippen Sie auf diesen Link. Dann passiert nichts. Sie müssen sich nicht anmelden.\n\n{{link}}`,
   ],
-  ownerWaitingStarted: (o) => ["Ihr Plan startet, wenn wir nichts von Ihnen hören", `Wenn es Ihnen gut geht, stoppt ein Tippen alles:\n\n${o}/home`],
+  ownerWaitingStarted: () => ["Ihr Plan startet, wenn wir nichts von Ihnen hören", `Wenn es Ihnen gut geht, stoppt ein Tippen auf diesen Link alles. Sie müssen sich nicht anmelden.\n\n{{link}}`],
   ownerActivated: (o) => ["Ihr Plan hat begonnen", `Ihr Plan hat begonnen, weil wir nichts von Ihnen gehört haben. Ihr Geld bleibt sicher für Ihre Familie.\n\n${o}/home`],
   contactOwnerIsOkay: (n) => [`${n} geht es gut`, `${n} hat uns gesagt, dass alles gut ist. Es passiert also nichts. Danke, dass Sie auf ${n} achten.`],
   contactActivated: (n, o) => [`Der Plan von ${n} hat begonnen`, `Das Geld bleibt sicher für die Familie, und die Person, die sich um den Nachlass kümmert, hat alles, was sie braucht.\n\n${o}/contact`],
@@ -98,16 +99,16 @@ const de: Templates = {
 };
 
 const es: Templates = {
-  checkinReminder: (o) => ["¿Está bien?", `Un toque nos dice que está bien:\n\n${o}/home`],
+  checkinReminder: () => ["¿Está bien?", `Un toque en este enlace nos dice que está bien. No hace falta entrar en su cuenta.\n\n{{link}}`],
   contactCheckinMissed: (n, o) => [
     `No hemos sabido nada de ${n}`,
     `${n} no nos ha contestado. Puede pasar por motivos normales.\n\nIntente primero hablar con esa persona: llámela, envíele un mensaje o pida a alguien cercano que vaya a verla.\n\nSi sabe que ha pasado algo, puede decírnoslo aquí: ${o}/contact`,
   ],
-  ownerContactConfirmed: (n, k, o) => [
+  ownerContactConfirmed: (n, k) => [
     `¿Está bien, ${n}?`,
-    `${k ?? "Su persona de confianza"} nos ha dicho que quizá le ha pasado algo. Si está bien, abra Legacy Protection y toque «Estoy bien». Así no pasará nada.\n\n${o}/home`,
+    `${k ?? "Su persona de confianza"} nos ha dicho que quizá le ha pasado algo. Si está bien, toque este enlace. Así no pasará nada. No hace falta entrar en su cuenta.\n\n{{link}}`,
   ],
-  ownerWaitingStarted: (o) => ["Su plan empezará si no sabemos nada de usted", `Si está bien, un toque lo para todo:\n\n${o}/home`],
+  ownerWaitingStarted: () => ["Su plan empezará si no sabemos nada de usted", `Si está bien, un toque en este enlace lo para todo. No hace falta entrar en su cuenta.\n\n{{link}}`],
   ownerActivated: (o) => ["Su plan ha empezado", `Su plan empezó porque no supimos nada de usted. Su dinero está a salvo para su familia.\n\n${o}/home`],
   contactOwnerIsOkay: (n) => [`${n} está bien`, `${n} nos ha dicho que está bien, así que no pasará nada. Gracias por cuidar de esa persona.`],
   contactActivated: (n, o) => [`El plan de ${n} ha empezado`, `Su dinero queda a salvo para su familia, y la persona que se ocupa de sus asuntos tiene lo que necesita.\n\n${o}/contact`],

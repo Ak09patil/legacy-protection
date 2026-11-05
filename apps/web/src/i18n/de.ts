@@ -188,6 +188,16 @@ export const de: Messages = {
     TEXT_CHECK_UNAVAILABLE: "Wir konnten die Nachricht nicht fertig lesen. Bitte prüfen Sie, ob diese Zahlung richtig ist.",
   },
 
+  ok: {
+    lead: "Tippen Sie auf den Knopf, dann wissen wir, dass es Ihnen gut geht. Sonst passiert nichts.",
+    done: "Danke. Schön, dass es Ihnen gut geht. Sie können diese Seite jetzt schließen.",
+    expiredTitle: "Dieser Link ist abgelaufen",
+    expiredLead: "Diese Links gelten 14 Tage. Sie können uns trotzdem sagen, dass es Ihnen gut geht, wenn Sie sich anmelden.",
+    startedTitle: "Ihr Plan hat schon begonnen",
+    startedLead: "Dieser Link kann das nicht ändern. Bitte melden Sie sich an, oder bitten Sie Ihre Vertrauensperson, uns anzurufen.",
+    signIn: "Anmelden",
+  },
+
   plan: {
     title: "Ihr Plan",
     savedAs: (v) => `Ihr Plan ist als Version ${v} gespeichert.`,

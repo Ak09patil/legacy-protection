@@ -32,6 +32,15 @@ envVarGroups:
       # The least-privilege app role's password; the app and worker build their lp_app URL from the owner URL's host.
       - key: LP_APP_PASSWORD
         generateValue: true
+      # Shared by the app and the worker: one seals invitation and "I'm okay" links, the other fills them in when it emails.
+      - key: APP_SECRET
+        generateValue: true
+      - key: APP_ORIGIN
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
 
 services:
   # ---------------------------------------------------------------- public app
@@ -54,17 +63,9 @@ services:
         fromService: { name: lp-risk, type: pserv, property: hostport }
       - key: DATABASE_OWNER_URL
         fromDatabase: { name: lp-main, property: connectionString }
-      - key: APP_ORIGIN
-        sync: false
-      - key: APP_SECRET
-        generateValue: true
       - key: VAULT_SECRET_WEB
         sync: false
       - key: ANTHROPIC_API_KEY
-        sync: false
-      - key: RESEND_API_KEY
-        sync: false
-      - key: EMAIL_FROM
         sync: false
       - key: OPS_EMAILS
         sync: false

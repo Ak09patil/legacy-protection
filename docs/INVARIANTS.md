@@ -184,6 +184,12 @@ A person reading in German or Spanish is protected exactly as an English reader 
 - **Enforced in:** `packages/policy/src/plan.ts` (summary templates per language), `packages/policy/src/keywords.ts`, `apps/web/src/server/payments.ts` (method signals), `packages/ai/src/jobs.ts` (FORBIDDEN_ADVICE per language), `apps/web/src/i18n/errors.ts`.
 - **Verified by:** `INV-25 every language carries the same facts: same lines, every name, email and day count`, `INV-25 scam scripts are recognised in German and Spanish`, `INV-25 the helper's guard holds in German and Spanish`, `INV-25 every server message has a translation`.
 
+### INV-26 — "I'm okay" never depends on remembering how to sign in, and the link can do nothing else
+Every "are you okay?" email (reminders, and the messages sent when a trusted person says something happened) carries a one-tap link. The link is signed with a key outside the database, names one plan, works for 14 days, and can only record that the owner is okay: it can't move money, change the plan or show anything private. Opening the page changes nothing (email scanners open links on their own); the tap does. The link is stored sealed in the outbox and erased once the email is sent.
+
+- **Enforced in:** `packages/service/src/delivery.ts` (`checkInLink`, `verifyCheckInToken`, `deliverDue`), `apps/web/src/server/plans.ts` (`checkInWithLink`), `apps/web/src/app/ok/[token]`.
+- **Verified by:** `INV-26 the one-tap link says 'I'm okay' and nothing else; a changed or old link does nothing`, `INV-26 a reminder email carries a working one-tap link, in the owner's language`.
+
 ---
 
 ## Change log
@@ -196,3 +202,4 @@ A person reading in German or Spanish is protected exactly as an English reader 
 | 2026-11-05 | Added INV-24 (sensitive fields sealed by a separate vault) | ADR-0007 |
 | 2026-11-05 | INV-10: an AI text-reader outage asks the owner (REVIEW) instead of holding; risk-service outages still hold. Found when a model outage held a carer's routine payment. | — |
 | 2026-11-05 | Added INV-25 (same protection in every language); method alone (gift cards, crypto) now signals, found when a German scam note went unrecognised in end-to-end testing | — |
+| 2026-11-05 | Added INV-26 (one-tap "I'm okay" from email). The outbox is now delivered by the worker, with retries, and secret links are erased after sending. | — |

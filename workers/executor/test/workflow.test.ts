@@ -17,6 +17,8 @@ import { createActivities } from "../src/activities.js";
 import { changedSignal } from "../src/workflows.js";
 
 const ADMIN_URL = process.env.TEST_DATABASE_ADMIN_URL;
+// The worker seals "I'm okay" links into the outbox, so it needs the app secret (as it does in production).
+process.env.APP_SECRET ??= "test-app-secret-0123456789-0123456789";
 const suite = ADMIN_URL ? describe : describe.skip;
 const PW = "lp_app_test_only";
 const H = 3_600_000;

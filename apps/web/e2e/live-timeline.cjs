@@ -40,7 +40,7 @@ async function person(b) {
   await P.waitForURL('**/contact');
   const planId = sql("select plan_id from plan_state limit 1");
   await sleep(1500);
-  console.log('workflow running:', execSync(`temporal workflow describe --workflow-id plan-${planId} -o json`).toString().includes('"RUNNING"') || execSync(`temporal workflow describe --workflow-id plan-${planId}`).toString().includes('Running'));
+  console.log('workflow running:', execSync(`temporal workflow describe --workflow-id plan-${planId} -o json`).toString().includes('RUNNING'));
   // Time passes: Eleanor last checked in 11 days ago.
   sql(`update plan_state set last_checkin_at = now() - interval '11 days' where plan_id = '${planId}'`);
   signal(planId);

@@ -8,6 +8,7 @@
  */
 
 import { EMAILS, emailLocale } from "./emails.js";
+import { checkInLink } from "./delivery.js";
 import { randomUUID } from "node:crypto";
 import { initialState, transition, type LifecycleEvent, type LifecycleState, type Phase } from "@lp/core";
 import { appendEvent } from "@lp/db/audit";
@@ -106,11 +107,13 @@ export async function queueEffects(c: Tx, planId: string, effects: Effects, at: 
     if (e.type === "NOTIFY_OWNER_ALL_CHANNELS") {
       const m = EMAILS[emailLocale(o.owner_locale)];
       const text = {
-        CONTACT_CONFIRMED: m.ownerContactConfirmed(first, k?.display_name ?? null, origin),
-        WAITING_STARTED: m.ownerWaitingStarted(origin),
+        CONTACT_CONFIRMED: m.ownerContactConfirmed(first, k?.display_name ?? null),
+        WAITING_STARTED: m.ownerWaitingStarted(),
         ACTIVATED: m.ownerActivated(origin),
       }[e.reason];
-      await outbox(c, planId, o.owner_id, o.owner_email, `OWNER_${e.reason}`, text[0]!, text[1]!, at);
+      // "Are you okay?" messages carry a one-tap link, so answering never depends on remembering how to sign in.
+      const link = e.reason === "ACTIVATED" ? undefined : checkInLink(origin, planId, at.getTime());
+      await outbox(c, planId, o.owner_id, o.owner_email, `OWNER_${e.reason}`, text[0]!, text[1]!, at, link);
     } else if (e.type === "NOTIFY_CONTACT" && k) {
       const m = EMAILS[emailLocale(k.locale)];
       const text = {

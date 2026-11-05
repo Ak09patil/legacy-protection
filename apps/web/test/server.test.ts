@@ -221,6 +221,90 @@ suite("web server", () => {
     });
   });
 
+  describe("email delivery and the one-tap link", () => {
+    const outboxFor = async (planId: string) =>
+      (await db.db().query(`SELECT kind, to_email, sent_at, attempts, secret, next_attempt_at FROM notifications WHERE plan_id = $1 ORDER BY created_at`, [planId])).rows;
+
+    it("delivers the outbox once, fills in the secret link, then erases it", async () => {
+      const { deliverDue } = await import("@lp/service");
+      as(await signUp("Eleanor", `e-${randomUUID()}@example.com`));
+      const ctx = await plans.requireRole("OWNER");
+      const contactEmail = `p-${randomUUID()}@example.com`;
+      await plans.confirmPlan(ctx, planFor(contactEmail));
+      const sent: Array<{ to: string; subject: string; text: string }> = [];
+      const mailer = { name: "test", send: async (to: string, subject: string, text: string) => void sent.push({ to, subject, text }) };
+      // Other tests' messages may be waiting too; deliver until this plan's invitation has gone.
+      for (let i = 0; i < 20 && !sent.some((m) => m.to === contactEmail); i++) await deliverDue(db.db(), mailer);
+      const mine = sent.filter((m) => m.to === contactEmail);
+      expect(mine).toHaveLength(1);
+      expect(mine[0]!.text).toMatch(/http:\/\/localhost:3000\/invite\/[A-Za-z0-9_-]{20,}/);
+      expect(mine[0]!.text).not.toContain("{{link}}");
+      const rows = await outboxFor(ctx.planId);
+      expect(rows.every((r) => r.sent_at !== null && r.secret === null)).toBe(true);
+      // Nothing is sent twice.
+      const before = sent.length;
+      await deliverDue(db.db(), mailer);
+      expect(sent.filter((m) => m.to === contactEmail)).toHaveLength(1);
+      expect(sent.length).toBe(before);
+    });
+
+    it("a failed send is retried later with a growing wait, never lost", async () => {
+      const { deliverDue } = await import("@lp/service");
+      as(await signUp("Eleanor", `e-${randomUUID()}@example.com`));
+      const ctx = await plans.requireRole("OWNER");
+      await plans.confirmPlan(ctx, planFor(`p-${randomUUID()}@example.com`));
+      const down = { name: "down", send: async () => Promise.reject(new Error("provider down")) };
+      const now = new Date();
+      for (let i = 0; i < 50; i++) if ((await deliverDue(db.db(), down, now)).failed === 0) break;
+      const [row] = await outboxFor(ctx.planId);
+      expect(row.sent_at).toBeNull();
+      expect(row.attempts).toBe(1);
+      expect(row.next_attempt_at.getTime()).toBeGreaterThan(now.getTime());
+      expect(row.secret).not.toBeNull(); // still there to send later
+    });
+
+    it("INV-26 the one-tap link says 'I'm okay' and nothing else; a changed or old link does nothing", async () => {
+      const { checkInLink } = await import("@lp/service");
+      as(await signUp("Eleanor", `e-${randomUUID()}@example.com`));
+      const ctx = await plans.requireRole("OWNER");
+      await plans.confirmPlan(ctx, planFor(`p-${randomUUID()}@example.com`));
+      const token = checkInLink("", ctx.planId).replace("/ok/", "");
+      expect(await plans.openCheckInLink(token)).toMatchObject({ status: "OK", firstName: "Eleanor" });
+      testCookies.clear(); // no session: the link works on its own
+      expect(await plans.checkInWithLink(token)).toBe(true);
+      const c = await db.db().query(`SELECT channel FROM checkins WHERE plan_id = $1 ORDER BY at DESC LIMIT 1`, [ctx.planId]);
+      expect(c.rows[0].channel).toBe("email_link");
+
+      const tampered = token.slice(0, -2) + (token.endsWith("AA") ? "BB" : "AA");
+      expect(await plans.checkInWithLink(tampered)).toBe(false);
+      const otherPlan = token.replace(ctx.planId, randomUUID());
+      expect(await plans.checkInWithLink(otherPlan)).toBe(false);
+      const old = checkInLink("", ctx.planId, Date.now() - 15 * 86_400_000).replace("/ok/", "");
+      expect(await plans.openCheckInLink(old)).toEqual({ status: "EXPIRED" });
+      expect(await plans.checkInWithLink(old)).toBe(false);
+    });
+
+    it("INV-26 a reminder email carries a working one-tap link, in the owner's language", async () => {
+      const { sendReminder, deliverDue } = await import("@lp/service");
+      testCookies.clear();
+      testCookies.set("lp_lang", "es");
+      const email = `e-${randomUUID()}@example.com`;
+      const begun = await auth.beginSignUpWithCode({ name: "Lucía", email });
+      if (!begun.ok) throw new Error(begun.message);
+      await auth.finishSignUpWithCode(begun.value.codeId, sentCodes.at(-1)!);
+      const ctx = await plans.requireRole("OWNER");
+      await plans.confirmPlan(ctx, planFor(`p-${randomUUID()}@example.com`));
+      await db.db().query(`UPDATE plan_state SET last_checkin_at = now() - interval '8 days' WHERE plan_id = $1`, [ctx.planId]);
+      expect(await sendReminder(db.db(), ctx.planId, Date.now() - 86_400_000, 1)).toBe("SENT");
+      const sent: Array<{ to: string; subject: string; text: string }> = [];
+      for (let i = 0; i < 20 && !sent.some((m) => m.to === email); i++) await deliverDue(db.db(), { name: "t", send: async (to, subject, text) => void sent.push({ to, subject, text }) });
+      const m = sent.find((x) => x.to === email)!;
+      expect(m.subject).toBe("¿Está bien?");
+      const token = /\/ok\/(\S+)/.exec(m.text)![1]!;
+      expect(await plans.checkInWithLink(token)).toBe(true);
+    });
+  });
+
   describe("plans and invites", () => {
     it("INV-08 the owner can't name themselves as their own contact", async () => {
       const email = `o-${randomUUID()}@example.com`;

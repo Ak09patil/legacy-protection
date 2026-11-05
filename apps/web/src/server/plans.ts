@@ -17,7 +17,7 @@ import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 import { DEFAULT_POLICY, nextDue, type LifecycleState, type Phase } from "@lp/core";
 import { appendEvent, verifyChain } from "@lp/db/audit";
-import { applyEvent, EMAILS, emailLocale, outbox, toLifecycle, type StateRow } from "@lp/service";
+import { applyEvent, EMAILS, emailLocale, outbox, toLifecycle, verifyCheckInToken, type StateRow } from "@lp/service";
 export { applyEvent, outbox };
 import { PlanDocumentSchema, summarisePlan, type PlanDocument } from "@lp/policy";
 import { createInvite, currentUser, type Role, type SessionUser } from "./auth";
@@ -148,6 +148,44 @@ export async function checkIn(ctx: Ctx, channel: "app" | "email_link" = "app"): 
     if (!has.rowCount) return; // no confirmed plan yet: nothing to cancel
     await c.query(`UPDATE plan_state SET last_checkin_at = $2 WHERE plan_id = $1`, [ctx.planId, now]);
     await applyEvent(c, ctx.planId, { type: "OWNER_ACTIVITY", at: now.getTime() }, ctx.user.id, { channel });
+  });
+}
+
+/** Who a one-tap "I'm okay" link belongs to, and whether it can still help. Reads nothing private. */
+export async function openCheckInLink(token: string): Promise<
+  { status: "OK" | "STARTED"; planId: string; firstName: string; locale: string } | { status: "EXPIRED" }
+> {
+  const v = verifyCheckInToken(token);
+  if (!v) return { status: "EXPIRED" };
+  const r = await db().query<{ display_name: string; locale: string; phase: string | null }>(
+    `SELECT u.display_name, u.locale, s.phase FROM plans p JOIN users u ON u.id = p.owner_id LEFT JOIN plan_state s ON s.plan_id = p.id WHERE p.id = $1`,
+    [v.planId],
+  );
+  const row = r.rows[0];
+  if (!row) return { status: "EXPIRED" };
+  const started = row.phase === "ACTIVATED" || row.phase === "EXECUTING" || row.phase === "COMPLETED";
+  return { status: started ? "STARTED" : "OK", planId: v.planId, firstName: row.display_name.split(" ")[0] ?? row.display_name, locale: row.locale };
+}
+
+/**
+ * "I'm okay" from an email link, without signing in (INV-26). The link can
+ * only do this: it can't move money, change the plan, or show anything. The
+ * page asks for a tap first, because email scanners open links on their own.
+ */
+export async function checkInWithLink(token: string): Promise<boolean> {
+  const v = verifyCheckInToken(token);
+  if (!v) return false;
+  return tx(async (c) => {
+    const o = await c.query<{ owner_id: string }>(`SELECT owner_id FROM plans WHERE id = $1`, [v.planId]);
+    const ownerId = o.rows[0]?.owner_id;
+    if (!ownerId) return false;
+    const now = new Date();
+    await c.query(`INSERT INTO checkins (plan_id, user_id, at, channel) VALUES ($1, $2, $3, 'email_link')`, [v.planId, ownerId, now]);
+    const has = await c.query(`SELECT 1 FROM plan_state WHERE plan_id = $1`, [v.planId]);
+    if (!has.rowCount) return true;
+    await c.query(`UPDATE plan_state SET last_checkin_at = $2 WHERE plan_id = $1`, [v.planId, now]);
+    await applyEvent(c, v.planId, { type: "OWNER_ACTIVITY", at: now.getTime() }, ownerId, { channel: "email_link" });
+    return true;
   });
 }
 

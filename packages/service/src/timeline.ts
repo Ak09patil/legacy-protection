@@ -6,6 +6,7 @@
  */
 
 import { EMAILS, emailLocale } from "./emails.js";
+import { checkInLink } from "./delivery.js";
 import { DEFAULT_POLICY, deadlines, isMissed, nextDue, type CheckinPolicy, type Phase } from "@lp/core";
 import { appendEvent } from "@lp/db/audit";
 import { PlanDocumentSchema, type PlanDocument } from "@lp/policy";
@@ -102,8 +103,8 @@ export async function sendReminder(pool: pg.Pool, planId: string, dueAt: number,
     if (dup.rowCount) return "SKIPPED";
     const { owner } = await people(c, planId);
     const origin = process.env.APP_ORIGIN ?? "http://localhost:3000";
-    const [subject, body] = EMAILS[emailLocale(owner.locale)].checkinReminder(origin);
-    await outbox(c, planId, owner.id, owner.email, kind, subject, body);
+    const [subject, body] = EMAILS[emailLocale(owner.locale)].checkinReminder();
+    await outbox(c, planId, owner.id, owner.email, kind, subject, body, new Date(), checkInLink(origin, planId));
     await appendEvent(c, { planId, at: new Date(), kind: "CHECKIN_REMINDER_SENT", actor: "timeline", payload: { n, dueAt: due } });
     return "SENT";
   });

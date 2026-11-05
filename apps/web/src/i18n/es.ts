@@ -188,6 +188,16 @@ export const es: Messages = {
     TEXT_CHECK_UNAVAILABLE: "No pudimos terminar de leer su mensaje. Por favor, compruebe que este pago es correcto.",
   },
 
+  ok: {
+    lead: "Toque el botón y sabremos que está bien. No pasará nada más.",
+    done: "Gracias. Nos alegra que esté bien. Ya puede cerrar esta página.",
+    expiredTitle: "Este enlace ha caducado",
+    expiredLead: "Estos enlaces sirven durante 14 días. Aun así, puede decirnos que está bien si entra en su cuenta.",
+    startedTitle: "Su plan ya ha empezado",
+    startedLead: "Este enlace no puede cambiarlo. Entre en su cuenta, o pida a su persona de confianza que nos llame.",
+    signIn: "Entrar",
+  },
+
   plan: {
     title: "Su plan",
     savedAs: (v) => `Su plan está guardado como versión ${v}.`,

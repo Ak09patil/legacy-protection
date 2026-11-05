@@ -5,7 +5,7 @@ import { Client, Connection } from "@temporalio/client";
 import { NativeConnection, Worker } from "@temporalio/worker";
 import pg from "pg";
 import { appDatabaseUrl } from "@lp/db/url";
-import { configureVault } from "@lp/service";
+import { configureVault, deliverDue, mailerFromEnv } from "@lp/service";
 import { httpVault } from "@lp/vault";
 import { createActivities, executorFromEnv } from "./activities.js";
 
@@ -35,6 +35,7 @@ async function main() {
   console.log(`Worker running (executor: ${executor.name})`);
   const running = worker.run();
   await reconcile(pool);
+  deliverForever(pool);
   await running;
 }
 
@@ -64,4 +65,23 @@ async function reconcile(pool: pg.Pool) {
     });
   }
   console.log(`Reconciled ${active.rowCount} active plan(s)`);
+}
+
+/**
+ * Sends the outbox every 15 seconds: reminders, alerts and invitations. A
+ * failure is logged and retried later; it never stops the worker.
+ */
+function deliverForever(pool: pg.Pool) {
+  const mailer = mailerFromEnv();
+  console.log(`Outbox delivery on (${mailer.name})`);
+  const tick = async () => {
+    try {
+      const r = await deliverDue(pool, mailer);
+      if (r.sent || r.failed) console.log(`[outbox] sent ${r.sent}, failed ${r.failed}`);
+    } catch (e) {
+      console.error(`[outbox] ${e instanceof Error ? e.message : e}`);
+    }
+    setTimeout(tick, 15_000).unref();
+  };
+  void tick();
 }

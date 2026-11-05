@@ -196,6 +196,16 @@ export const en = {
     TEXT_CHECK_UNAVAILABLE: "We couldn’t finish reading their message, so please check this payment is right.",
   } as Record<string, string>,
 
+  ok: {
+    lead: "Tap the button and we’ll know you’re well. Nothing else will happen.",
+    done: "Thank you. We’re glad you’re well. You can close this page now.",
+    expiredTitle: "This link has expired",
+    expiredLead: "These links work for 14 days. You can still tell us you’re okay by signing in.",
+    startedTitle: "Your plan has already started",
+    startedLead: "This link can’t change that. Please sign in, or ask your trusted person to call us.",
+    signIn: "Sign in",
+  },
+
   plan: {
     title: "Your plan",
     savedAs: (v: number) => `Your plan is saved as version ${v}.`,

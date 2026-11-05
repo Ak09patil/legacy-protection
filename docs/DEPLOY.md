@@ -14,9 +14,9 @@ Everything is defined in `render.yaml` (a Render Blueprint). Only the web app is
 | `VAULT_MASTER_KEY` | `lp-vault` | `openssl rand -hex 32` |
 | `VAULT_SECRET_WEB` | `lp-vault` **and** `lp-web` (same value) | `openssl rand -hex 32` |
 | `VAULT_SECRET_WORKER` | `lp-vault` **and** `lp-worker` (same value) | `openssl rand -hex 32` |
-| `APP_ORIGIN` | `lp-web` | the web service's URL, e.g. `https://lp-web.onrender.com` |
+| `APP_ORIGIN` | env group `lp-shared` | the web service's URL, e.g. `https://lp-web.onrender.com` |
 | `ANTHROPIC_API_KEY` | `lp-web` | with a monthly spending limit |
-| `RESEND_API_KEY`, `EMAIL_FROM` | `lp-web` | resend.com |
+| `RESEND_API_KEY`, `EMAIL_FROM` | env group `lp-shared` (the app sends sign-in codes, the worker delivers everything else) | resend.com |
 | `OPS_EMAILS` | `lp-web` | emails allowed to see the operations page |
 
 4. Deploy. Before each web deploy, Render runs `pnpm db:migrate:ci` as the database owner, which also creates the least-privilege `lp_app` role. The web app and worker connect as `lp_app`, building that URL from the owner URL's host and `LP_APP_PASSWORD`.
@@ -25,6 +25,7 @@ Everything is defined in `render.yaml` (a Render Blueprint). Only the web app is
 
 - `https://<web>/api/health` returns `{"ok":true}`.
 - Sign up, confirm a plan, and see its timeline start (worker logs: `Reconciled … active plan(s)`).
+- The invitation email arrives (worker logs: `[outbox] sent 1`), and its link works once.
 - A payment with a message: in the Render database shell, `select left(note, 5) from payments;` shows `lpv1.` (sealed).
 
 ## Production differences (beyond the hackathon)

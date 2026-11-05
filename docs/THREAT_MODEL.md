@@ -98,3 +98,15 @@ Some people can't create passkeys (for example, a Mac with iCloud Keychain switc
 - **Codes:** 6 digits, stored only as an HMAC keyed by APP_SECRET, single use, 10-minute expiry, 5 wrong guesses at most, 3 codes per email per 15 minutes.
 - **No account discovery:** asking for a sign-in code answers the same way whether or not the email has an account.
 - The audit log records which method was used (`verifiedBy`).
+
+## Addendum: one-tap "I'm okay" links (INV-26)
+
+| Threat | What stops it |
+|---|---|
+| Someone with access to the owner's inbox keeps the plan from starting by tapping "I'm okay" | Accepted. Anyone with that inbox could already sign in with an email code. The link adds no new power: it can only say the owner is okay, never move money or read anything. The trusted person still hears about missed answers. |
+| A guessed or altered link | HMAC-SHA-256 with APP_SECRET over the plan and issue time; compared in constant time. A changed plan id, time or signature is refused. |
+| An old email found later | Links expire after 14 days. |
+| Email security scanners "click" the link and check in on the owner's behalf | Opening the page changes nothing; only a tap on the button (a POST) records the check-in. |
+| A copy of the database used to forge or read links | The link is stored sealed with a key outside the database, and erased once the email is sent. |
+| The link leaks through the Referer header | The page sets `referrer: no-referrer` and isn't indexed. |
+
