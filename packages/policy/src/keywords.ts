@@ -65,6 +65,30 @@ const PATTERNS: ReadonlyArray<[TextLabel, RegExp[]]> = [
       w("abuel[oa]|soy yo|adivina quién|tu (niet[oa]|sobrin[oa])|estoy en (la cárcel|el hospital|un apuro)|fianza|perdí (el|mi) (móvil|teléfono)|número nuevo"),
     ],
   ],
+  [
+    "INVESTMENT_PITCH",
+    [
+      w("invest(ment|ing)?|trading (platform|account|app)|guaranteed (returns?|profits?)|returns? of \\d+ ?%|your profits? (is|are) ready|forex|mining pool|liquidity (pool|mining)|my (uncle|mentor|advisor) (knows|showed)|insider (tip|information)|double your money"),
+      w("investition|geldanlage|handelsplattform|trading[- ]?(plattform|konto|app)|garantierte (rendite|gewinne?)|ihre gewinne sind (da|bereit)|devisenhandel|verdoppeln sie ihr geld|insider[- ]?tipp"),
+      w("inversión|inversiones|invertir|plataforma de (trading|inversión)|rentabilidad garantizada|ganancias? garantizadas?|sus ganancias (están|ya están) (listas|disponibles)|forex|duplique su dinero|información privilegiada"),
+    ],
+  ],
+  [
+    "WITHDRAWAL_FEE",
+    [
+      w("(withdrawal|release|unlock|clearance|processing|verification|anti[- ]money[- ]laundering|aml) (fee|tax|deposit|charge)|(fee|tax|deposit) (to|before you can) (withdraw|release|unlock)|pay (the )?tax(es)? (on|before) (your )?(profit|withdrawal|funds)|unfreeze (your )?(account|funds)|account (is )?frozen until"),
+      w("(auszahlungs|freigabe|bearbeitungs|verifizierungs)gebühr(en)?|gebühr,? um (ihr geld|die auszahlung|die gewinne)|steuern? (auf|vor) (die |der )?(auszahlung|gewinne?)|konto (ist |wird )?eingefroren|geld freizugeben|auszahlung freischalten"),
+      w("(comisión|tasa|impuesto|depósito) (de|para) (retiro|retirar|liberar|desbloquear|liberación)|pagar (los )?impuestos? (de|sobre|antes de) (las )?(ganancias|retirar)|cuenta (está )?congelada|liberar (sus|los) fondos|desbloquear (sus|los) fondos"),
+    ],
+  ],
+  [
+    "ROMANCE",
+    [
+      w("my (love|darling|dearest|sweetheart|beloved|queen|king)|i love you|love of my life|can'?t wait to (meet|hold|see) you|when we (finally )?meet|soul ?mate|our future together|stuck (abroad|overseas|at the airport)|oil rig|deployed overseas|plane ticket|flight ticket|visa fee|customs (fee|charge)|hospital bill"),
+      w("mein (schatz|liebling|herz)|meine (liebe|liebste|traumfrau)|ich liebe dich|liebe meines lebens|kann es kaum erwarten,? dich zu (sehen|treffen)|seelenverwandte?r?|unsere gemeinsame zukunft|im ausland (festsitze|feststecke|gestrandet)|bohrinsel|flugticket|visumgebühr|zollgebühr|krankenhausrechnung"),
+      w("mi (amor|cariño|vida|corazón|cielo)|te quiero|te amo|amor de mi vida|no veo la hora de (verte|conocerte)|alma gemela|nuestro futuro juntos|atrapad[oa] en el extranjero|plataforma petrolífera|billete de avión|pasaje de avión|tasa de(l)? visado|gastos de aduana|factura del hospital"),
+    ],
+  ],
 ];
 
 export function keywordLabels(text: string): TextLabel[] {

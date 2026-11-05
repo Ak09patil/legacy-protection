@@ -85,6 +85,9 @@ const TEXT_LABELS = [
   "IMPERSONATION_GOVERNMENT",
   "IMPERSONATION_TECH_SUPPORT",
   "IMPERSONATION_FAMILY",
+  "INVESTMENT_PITCH",
+  "WITHDRAWAL_FEE",
+  "ROMANCE",
 ] as const satisfies readonly TextLabel[];
 
 const LabelOutputSchema = z.object({ labels: z.array(z.enum(TEXT_LABELS)).max(TEXT_LABELS.length) }).strict();
@@ -93,7 +96,11 @@ const CLASSIFY_SYSTEM = `You label payment text for signs of scams that target o
 ${UNTRUSTED_RULES}
 
 Return ONLY {"labels": [...]} using zero or more of exactly these labels:
-GIFT_CARD_REQUEST, CRYPTO_REQUEST, URGENCY, IMPERSONATION_GOVERNMENT, IMPERSONATION_TECH_SUPPORT, IMPERSONATION_FAMILY.
+GIFT_CARD_REQUEST, CRYPTO_REQUEST, URGENCY, IMPERSONATION_GOVERNMENT, IMPERSONATION_TECH_SUPPORT, IMPERSONATION_FAMILY,
+INVESTMENT_PITCH (promised returns, trading platforms, "your profit is ready"),
+WITHDRAWAL_FEE (a fee, tax or deposit demanded to release or withdraw money),
+ROMANCE (affection or love from the person being paid).
+The text may be in any language; label it the same way.
 Return {"labels": []} if none apply. No other keys, no explanations.`;
 
 export type LabelResult =

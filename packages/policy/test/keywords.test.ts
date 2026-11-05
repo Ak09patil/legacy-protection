@@ -23,6 +23,19 @@ describe("keyword labeller", () => {
     expect(keywordLabels(text)).toEqual(expect.arrayContaining(labels));
   });
 
+  it.each([
+    ["Your profit is ready! Pay the 15% withdrawal tax to release your funds.", ["WITHDRAWAL_FEE", "INVESTMENT_PITCH"]],
+    ["My mentor showed me this trading platform, guaranteed returns of 30% a month.", ["INVESTMENT_PITCH"]],
+    ["My darling, I'm stuck at the airport and need money for customs fees. I love you.", ["ROMANCE"]],
+    ["Ihre Gewinne sind da. Zahlen Sie die Auszahlungsgebühr, um Ihr Geld freizugeben.", ["WITHDRAWAL_FEE", "INVESTMENT_PITCH"]],
+    ["Mein Schatz, ich liebe dich. Ich brauche Geld für das Flugticket.", ["ROMANCE"]],
+    ["Su cuenta está congelada. Pague la comisión de retiro para liberar sus fondos.", ["WITHDRAWAL_FEE"]],
+    ["Mi amor, te quiero. Necesito dinero para el billete de avión.", ["ROMANCE"]],
+    ["Plataforma de inversión con rentabilidad garantizada.", ["INVESTMENT_PITCH"]],
+  ])("INV-27 labels slow-scam language: %s", (text, labels) => {
+    expect(keywordLabels(text)).toEqual(expect.arrayContaining(labels));
+  });
+
   it("leaves ordinary German and Spanish notes alone", () => {
     expect(keywordLabels("Danke für die Hilfe diese Woche")).toEqual([]);
     expect(keywordLabels("Miete für November")).toEqual([]);
@@ -30,6 +43,11 @@ describe("keyword labeller", () => {
     expect(keywordLabels("Alquiler de noviembre")).toEqual([]);
     // Words that contain a keyword aren't the keyword ("Opa" is not in "Opal", "hoy" is not in "Hoyos").
     expect(keywordLabels("Ring mit Opal, Familie Hoyos")).toEqual([]);
+    // Everyday words near the slow-scam ones.
+    expect(keywordLabels("Rechnung in der Anlage. Gewinn beim Vereinsfest, danke!")).toEqual([]);
+    expect(keywordLabels("Profit share from the bake sale, thanks for helping")).toEqual([]);
+    expect(keywordLabels("Love you mum, see you Sunday")).toEqual([]);
+    expect(keywordLabels("Beneficios del mercadillo, gracias")).toEqual([]);
   });
 
   it("leaves ordinary notes alone", () => {

@@ -90,9 +90,18 @@ suite("web server", () => {
     await o.end();
 
     // A stand-in risk service the test can switch between answers.
-    riskServer = createServer((req, res) => {
+    riskServer = createServer(async (req, res) => {
       if (riskMode === "down") {
         res.writeHead(503).end();
+        return;
+      }
+      // Like the real service: labels it wasn't trained on are refused (422).
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      const known = ["GIFT_CARD_REQUEST", "CRYPTO_REQUEST", "URGENCY", "IMPERSONATION_GOVERNMENT", "IMPERSONATION_TECH_SUPPORT", "IMPERSONATION_FAMILY"];
+      const sentLabels: unknown = body ? (JSON.parse(body) as { textLabels?: unknown }).textLabels : undefined;
+      if (Array.isArray(sentLabels) && sentLabels.some((l) => !known.includes(l as string))) {
+        res.writeHead(422).end();
         return;
       }
       const hold = riskMode === "hold";
@@ -382,6 +391,36 @@ suite("web server", () => {
       riskMode = "pass";
       for (const note of ["DRINGEND: Kaufen Sie heute Geschenkkarten, sonst wird Ihr Konto gesperrt.", "URGENTE: compre tarjetas regalo hoy mismo o su cuenta será bloqueada."]) {
         expect(await payments.createPayment(ctx, { ...scam, method: "p2p", note })).toMatchObject({ ok: true, level: "HOLD" });
+      }
+    });
+
+    it("INV-27 a slow investment scam through the real payment path: asked, then paused, however she answers", async () => {
+      const ctx = await ownerWithPlan();
+      riskMode = "pass";
+      const mentor = { payeeName: "Daniel (trading mentor)", payeeEmail: `mentor-${randomUUID()}@trade.example`, method: "p2p", note: "" };
+      const results: string[] = [];
+      for (const amount of ["200", "500", "1500", "5000"]) {
+        const r = await payments.createPayment(ctx, { ...mentor, amount });
+        if (!r.ok) throw new Error(r.message);
+        results.push(r.level);
+        // She says "yes, it's right" whenever we only ask.
+        if (r.level === "REVIEW") expect(await payments.actOnPayment(ctx, r.id, "confirm")).toMatchObject({ ok: true });
+      }
+      expect(results.slice(1, 3)).toEqual(["REVIEW", "REVIEW"]);
+      expect(results[3]).toBe("HOLD");
+    });
+
+    it("INV-27 'pay the fee to release your profits' is paused, and the new labels never break the risk service", async () => {
+      const ctx = await ownerWithPlan();
+      riskMode = "pass";
+      for (const note of ["Your profit is ready. Pay the withdrawal tax to release your funds.", "Ihre Gewinne sind da. Zahlen Sie die Auszahlungsgebühr, um Ihr Geld freizugeben."]) {
+        const r = await payments.createPayment(ctx, { payeeName: "Platform", payeeEmail: `p-${randomUUID()}@x.example`, amount: "300", method: "p2p", note });
+        expect(r).toMatchObject({ ok: true, level: "HOLD" });
+        if (!r.ok) continue;
+        const p = await payments.getPayment(ctx, r.id);
+        expect(p?.decision?.reasons.map((x) => x.code)).toContain("WITHDRAWAL_FEE");
+        // A 422 from the risk service would have shown up as DEPENDENCY_UNAVAILABLE.
+        expect(p?.decision?.reasons.map((x) => x.code)).not.toContain("DEPENDENCY_UNAVAILABLE");
       }
     });
 

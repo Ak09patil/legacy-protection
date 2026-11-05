@@ -8,8 +8,9 @@
 
 import type { Level, Reason, RuleResult } from "./decide.js";
 import { maxLevel } from "./decide.js";
+import { isEscalating, payeeTotalThreshold, spreadThreshold, type RelationshipFacts } from "./relationship.js";
 
-export const RULES_VERSION = "rules-1.0.0";
+export const RULES_VERSION = "rules-1.1.0";
 
 export type TextLabel =
   | "GIFT_CARD_REQUEST"
@@ -17,7 +18,23 @@ export type TextLabel =
   | "URGENCY"
   | "IMPERSONATION_GOVERNMENT"
   | "IMPERSONATION_TECH_SUPPORT"
-  | "IMPERSONATION_FAMILY";
+  | "IMPERSONATION_FAMILY"
+  /** Promised returns, trading platforms, "your profit is ready". */
+  | "INVESTMENT_PITCH"
+  /** A fee, tax or deposit to release money: always a scam. */
+  | "WITHDRAWAL_FEE"
+  /** Affection from someone the owner pays: "my love", "can't wait to meet you". */
+  | "ROMANCE";
+
+/** The labels the risk model was trained on. Newer labels are used by the rules only. */
+export const MODEL_TEXT_LABELS: readonly TextLabel[] = [
+  "GIFT_CARD_REQUEST",
+  "CRYPTO_REQUEST",
+  "URGENCY",
+  "IMPERSONATION_GOVERNMENT",
+  "IMPERSONATION_TECH_SUPPORT",
+  "IMPERSONATION_FAMILY",
+];
 
 export interface PaymentFacts {
   readonly payeeIsNew: boolean;
@@ -26,6 +43,9 @@ export interface PaymentFacts {
   readonly amountRatioToTypical: number | null;
   readonly textLabels: readonly TextLabel[];
   readonly withinRegisteredObligationCap: boolean;
+  /** This payment's amount, and how it fits the owner's relationship with this payee (INV-27). */
+  readonly amountMinor?: number;
+  readonly relationship?: RelationshipFacts;
 }
 
 interface Rule {
@@ -36,6 +56,9 @@ interface Rule {
 }
 
 const has = (f: PaymentFacts, l: TextLabel) => f.textLabels.includes(l);
+/** New, or first paid within the recent window. Registered carers are covered by their own cap instead. */
+const youngRelationship = (f: PaymentFacts) => !f.payeeIsRegisteredCaregiver && (f.payeeIsNew || (f.relationship?.recentPayee ?? false));
+const OTHER_SCAM_LABELS: readonly TextLabel[] = ["GIFT_CARD_REQUEST", "CRYPTO_REQUEST", "URGENCY", "IMPERSONATION_GOVERNMENT", "IMPERSONATION_TECH_SUPPORT", "IMPERSONATION_FAMILY", "INVESTMENT_PITCH", "WITHDRAWAL_FEE"];
 
 export const RULES: readonly Rule[] = [
   {
@@ -64,6 +87,65 @@ export const RULES: readonly Rule[] = [
     level: "REVIEW",
     text: "This payment to a new payee is much larger than your usual payments.",
     applies: (f) => f.payeeIsNew && f.amountRatioToTypical !== null && f.amountRatioToTypical >= 5,
+  },
+  // ---- Slow scams: investment and romance (INV-27) ----
+  {
+    code: "WITHDRAWAL_FEE",
+    level: "HOLD",
+    text: "You're being asked to pay a fee or tax to get money back. Real investments never ask for this. It's how these scams take the last payment.",
+    applies: (f) => !f.payeeIsRegisteredCaregiver && has(f, "WITHDRAWAL_FEE"),
+  },
+  {
+    code: "INVESTMENT_PITCH_RECENT_PAYEE",
+    level: "HOLD",
+    text: "Someone you met recently is offering an investment or profits. This is the most costly scam for people over 60.",
+    applies: (f) => youngRelationship(f) && has(f, "INVESTMENT_PITCH"),
+  },
+  {
+    code: "ROMANCE_MONEY_REQUEST",
+    level: "HOLD",
+    text: "Someone you met recently who speaks of love is asking for money for an emergency, travel or an investment. That is how romance scams work.",
+    applies: (f) => youngRelationship(f) && has(f, "ROMANCE") && OTHER_SCAM_LABELS.some((l) => has(f, l)),
+  },
+  {
+    code: "ROMANCE_RECENT_PAYEE",
+    level: "REVIEW",
+    text: "Someone you met recently speaks of love and is being sent money. Have you met them in person?",
+    applies: (f) => youngRelationship(f) && has(f, "ROMANCE"),
+  },
+  {
+    code: "RECENT_PAYEE_ESCALATING",
+    level: "REVIEW",
+    text: "You started paying this person recently, and this is much more than before. Slow scams grow like this.",
+    applies: (f) => !f.payeeIsRegisteredCaregiver && !!f.relationship && f.amountMinor !== undefined && isEscalating(f.relationship, f.amountMinor),
+  },
+  {
+    code: "RECENT_PAYEE_LARGE_TOTAL",
+    level: "HOLD",
+    text: "A lot of money has now gone to someone you started paying recently, more than you usually spend in a month.",
+    applies: (f) =>
+      !f.payeeIsRegisteredCaregiver &&
+      !!f.relationship &&
+      f.relationship.recentPayee &&
+      !f.relationship.looksLikeABill &&
+      f.relationship.payeeTotalMinor >= payeeTotalThreshold(f.relationship),
+  },
+  {
+    code: "RECENT_PAYEE_LARGE_TOTAL_BILL",
+    level: "REVIEW",
+    text: "A lot of money has now gone to someone you started paying recently. It looks like a regular bill; please check it is.",
+    applies: (f) =>
+      !f.payeeIsRegisteredCaregiver &&
+      !!f.relationship &&
+      f.relationship.recentPayee &&
+      f.relationship.looksLikeABill &&
+      f.relationship.payeeTotalMinor >= payeeTotalThreshold(f.relationship),
+  },
+  {
+    code: "NEW_PAYEES_SPREAD",
+    level: "HOLD",
+    text: "A lot of money has gone to several new people in the last month. Scammers often ask you to pay a different account each time.",
+    applies: (f) => youngRelationship(f) && !!f.relationship && f.relationship.spreadTotalMinor >= spreadThreshold(f.relationship),
   },
   {
     code: "CAREGIVER_OVER_CAP",

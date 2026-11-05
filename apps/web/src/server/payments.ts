@@ -11,7 +11,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { appendEvent } from "@lp/db/audit";
-import { decide, evaluateRules, keywordLabels, RULES_VERSION, type ModelOutcome, type Reason, type TextLabel } from "@lp/policy";
+import { decide, evaluateRules, keywordLabels, MODEL_TEXT_LABELS, relationshipFacts, RULES_VERSION, type ModelOutcome, type Reason, type TextLabel } from "@lp/policy";
 import { z } from "zod";
 import { db, tx } from "./db";
 import { applyEvent, outbox, snapshot, type Ctx } from "./plans";
@@ -177,6 +177,12 @@ export async function createPayment(ctx: Ctx, input: unknown): Promise<CreateRes
     [ctx.planId],
   );
   const history = hist.rows.map((h) => ({ payeeId: h.payee_email, amountMinor: Number(h.amount_minor), at: h.created_at }));
+  // Payments not sent yet but not stopped either: they count towards totals, so queueing several at once can't slip under (INV-27).
+  const pend = await db().query<{ payee_email: string; amount_minor: string; created_at: Date }>(
+    `SELECT payee_email, amount_minor, created_at FROM payments WHERE plan_id = $1 AND status IN ('CONFIRM_NEEDED', 'PAUSED', 'WAITING_FOR_CONTACT', 'RELEASE_SCHEDULED')`,
+    [ctx.planId],
+  );
+  const waiting = pend.rows.map((h) => ({ payeeId: h.payee_email, amountMinor: Number(h.amount_minor), at: h.created_at }));
   const typical = median(history.map((h) => h.amountMinor));
   const carer = plan?.obligations.find((o) => o.payeeEmail === p.payeeEmail);
   const monthStart = new Date(now.getTime() - 30 * 86_400_000);
@@ -221,9 +227,11 @@ export async function createPayment(ctx: Ctx, input: unknown): Promise<CreateRes
     amountRatioToTypical: typical ? p.amountMinor / typical : null,
     textLabels: labels,
     withinRegisteredObligationCap: carer ? paidToCarer + p.amountMinor <= carer.maxPerMonthMinor && p.amountMinor <= carer.amountPerPaymentMinor : true,
+    amountMinor: p.amountMinor,
+    relationship: relationshipFacts(history, waiting, p.payeeEmail, p.amountMinor, now),
   };
   const hourLocal = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone: tz }).format(now)) % 24;
-  const assessed = await assessPayment({ payeeId: p.payeeEmail, amountMinor: p.amountMinor, at: now, hourLocal, method: p.method, textLabels: labels, history });
+  const assessed = await assessPayment({ payeeId: p.payeeEmail, amountMinor: p.amountMinor, at: now, hourLocal, method: p.method, textLabels: labels.filter((l) => MODEL_TEXT_LABELS.includes(l)), history });
   const model: ModelOutcome =
     textCheckUnavailable && assessed.status === "OK"
       ? {

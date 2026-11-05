@@ -190,6 +190,19 @@ Every "are you okay?" email (reminders, and the messages sent when a trusted per
 - **Enforced in:** `packages/service/src/delivery.ts` (`checkInLink`, `verifyCheckInToken`, `deliverDue`), `apps/web/src/server/plans.ts` (`checkInWithLink`), `apps/web/src/app/ok/[token]`.
 - **Verified by:** `INV-26 the one-tap link says 'I'm okay' and nothing else; a changed or old link does nothing`, `INV-26 a reminder email carries a working one-tap link, in the owner's language`.
 
+### INV-27 — Slow scams are judged by the whole relationship, not one payment
+Investment and romance scams look harmless one payment at a time. So every payment is also judged against the owner's whole history with that payee and with all recent payees:
+
+- **Escalation:** a payee first paid in the last 180 days, now being paid at least 2× the first payment and 1.5× the usual amount to them → the owner is asked (REVIEW). Comparing with the first payment and the median means alternating big and small amounts doesn't hide the climb.
+- **Total to one payee:** once everything sent or waiting to go to a recent payee reaches the larger of $2,500 and the owner's own typical month → paused (HOLD). A steady, about-monthly amount (a new landlord) is asked about instead of paused.
+- **Spread:** everything sent or waiting to go to all recent and new payees in 30 days reaching the larger of $5,000 and two typical months → paused. Moving the victim to a new account each time resets nothing.
+- **Words, in every language we offer:** a fee or tax "to release your money" is always paused; an investment pitch from someone recent is paused; romance plus any money pressure is paused, romance alone is asked about.
+- Payments still waiting count towards totals, so queueing several at once can't slip under a threshold. The baseline is built only from established payees, so a scam already under way can't raise its own threshold. The risk model only ever receives the labels it was trained on.
+
+- **Enforced in:** `packages/policy/src/relationship.ts`, `packages/policy/src/rules.ts`, `packages/policy/src/keywords.ts`, `apps/web/src/server/payments.ts`.
+- **Verified by:** `INV-27 slow scams: the relationship, not just the payment` (pig-butchering curve, splitting, account rotation, queueing, alternating amounts, withdrawal fees, romance), `INV-27 ordinary life is left alone` (steady bills, any steady amount to an established payee, a new monthly bill, thresholds that scale), `INV-27 a slow investment scam through the real payment path: asked, then paused, however she answers`, `INV-27 labels slow-scam language`.
+- **What still gets through, honestly:** up to about $2,500 to one new person, or $5,000 across several, before we pause (we ask before that). Money sent outside PayPal. A scam that grows slower than 2× and stays under the owner's normal monthly spending. And a determined owner can still choose "send anyway" after 24 hours: we tell her trusted person every time, but it's her money.
+
 ---
 
 ## Change log
@@ -203,3 +216,4 @@ Every "are you okay?" email (reminders, and the messages sent when a trusted per
 | 2026-11-05 | INV-10: an AI text-reader outage asks the owner (REVIEW) instead of holding; risk-service outages still hold. Found when a model outage held a carer's routine payment. | — |
 | 2026-11-05 | Added INV-25 (same protection in every language); method alone (gift cards, crypto) now signals, found when a German scam note went unrecognised in end-to-end testing | — |
 | 2026-11-05 | Added INV-26 (one-tap "I'm okay" from email). The outbox is now delivered by the worker, with retries, and secret links are erased after sending. | — |
+| 2026-11-05 | Added INV-27 (slow scams: escalation, totals, spread across accounts, withdrawal-fee and romance language). Rules 1.1.0. Found that new text labels would have made the risk service refuse requests; the model now only receives the labels it knows. | — |

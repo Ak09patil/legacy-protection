@@ -6,7 +6,7 @@ import "server-only";
  * payment (INV-10). Nothing here can make a payment less cautious.
  */
 
-import type { ModelOutcome, ModelSignal, TextLabel } from "@lp/policy";
+import { MODEL_TEXT_LABELS, type ModelOutcome, type ModelSignal, type TextLabel } from "@lp/policy";
 import { z } from "zod";
 
 const SignalSchema = z.object({
@@ -50,7 +50,8 @@ export async function assessPayment(input: ScoreInput): Promise<ModelOutcome> {
         at: input.at.toISOString(),
         hourLocal: input.hourLocal,
         method: input.method,
-        textLabels: input.textLabels,
+        // Only labels the model was trained on; it refuses others, and a refusal would read as an outage.
+        textLabels: input.textLabels.filter((l) => MODEL_TEXT_LABELS.includes(l)),
         history: input.history.slice(-5000).map((h) => ({ payeeId: h.payeeId, amountMinor: h.amountMinor, at: h.at.toISOString() })),
       }),
       post("/v1/network/payee", { payeeId: input.payeeId }),

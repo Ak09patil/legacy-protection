@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import { fromAcceptLanguage, LOCALES } from "@/i18n/config";
 import { ERROR_CATALOG, translateError } from "@/i18n/errors";
 import { MESSAGES } from "@/i18n/messages";
+import { RULES } from "@lp/policy";
 import { readability, syllables } from "@/i18n/readability";
 
 type Leaf = { path: string; value: string | ((...a: never[]) => string) };
@@ -140,6 +141,15 @@ describe("server messages", () => {
     expect(translateError("en", "Payment not found.")).toBe("Payment not found.");
     expect(translateError("de", "Payment not found.")).toBe("Zahlung nicht gefunden.");
     expect(translateError("es", "Something new and unlisted")).toBe("Revise esta parte otra vez, por favor.");
+  });
+});
+
+describe("payment reasons", () => {
+  it("every rule explains itself in every language, so a new rule can never show English to a German reader", () => {
+    for (const locale of LOCALES) {
+      const missing = RULES.map((r) => r.code).filter((c) => !MESSAGES[locale].reasons[c]);
+      expect(missing, locale).toEqual([]);
+    }
   });
 });
 
