@@ -95,12 +95,12 @@ suite("web server", () => {
         res.writeHead(503).end();
         return;
       }
-      // Like the real service: labels it wasn't trained on are refused (422).
+      // Like the real service: any well-formed label is accepted (unknown ones are ignored);
+      // a malformed one is refused with 422, which the app would treat as an outage.
       let body = "";
       for await (const chunk of req) body += chunk;
-      const known = ["GIFT_CARD_REQUEST", "CRYPTO_REQUEST", "URGENCY", "IMPERSONATION_GOVERNMENT", "IMPERSONATION_TECH_SUPPORT", "IMPERSONATION_FAMILY"];
       const sentLabels: unknown = body ? (JSON.parse(body) as { textLabels?: unknown }).textLabels : undefined;
-      if (Array.isArray(sentLabels) && sentLabels.some((l) => !known.includes(l as string))) {
+      if (Array.isArray(sentLabels) && (sentLabels.length > 16 || sentLabels.some((l) => typeof l !== "string" || !/^[A-Z][A-Z_]{2,39}$/.test(l)))) {
         res.writeHead(422).end();
         return;
       }
@@ -422,6 +422,64 @@ suite("web server", () => {
         // A 422 from the risk service would have shown up as DEPENDENCY_UNAVAILABLE.
         expect(p?.decision?.reasons.map((x) => x.code)).not.toContain("DEPENDENCY_UNAVAILABLE");
       }
+    });
+
+    it("INV-28 when people report a payee as a scammer, the next person is protected the same day", async () => {
+      riskMode = "pass";
+      const scammer = `scammer-${randomUUID()}@x.example`;
+      const pay = { payeeName: "Online friend", payeeEmail: scammer, amount: "40", method: "p2p", note: "" };
+      // Two different households pay and later tell us it was a scam.
+      for (let i = 0; i < 2; i++) {
+        const ctx = await ownerWithPlan();
+        const r = await payments.createPayment(ctx, pay);
+        if (!r.ok) throw new Error(r.message);
+        if (r.level === "REVIEW") await payments.actOnPayment(ctx, r.id, "confirm");
+        expect(await payments.reportOutcome(ctx, r.id, "SCAM")).toEqual({ ok: true });
+        // Saying it again changes nothing: a household counts once.
+        await payments.reportOutcome(ctx, r.id, "SCAM");
+      }
+      const next = await ownerWithPlan();
+      const r = await payments.createPayment(next, pay);
+      expect(r).toMatchObject({ ok: true, level: "HOLD" });
+      if (!r.ok) return;
+      const p = await payments.getPayment(next, r.id);
+      const reasons = p?.decision?.reasons ?? [];
+      expect(reasons.map((x) => x.code)).toContain("PAYEE_REPORTED_BY_OTHERS");
+      // Nothing about who reported (INV-13).
+      expect(JSON.stringify(reasons)).not.toMatch(/Eleanor|@example\.com/);
+    });
+
+    it("INV-28 one household alone can only make others be asked, and changing their answer takes it back", async () => {
+      riskMode = "pass";
+      const payee = `rival-${randomUUID()}@x.example`;
+      const a = await ownerWithPlan();
+      const ra = await payments.createPayment(a, { payeeName: "Shop", payeeEmail: payee, amount: "25", method: "p2p", note: "" });
+      if (!ra.ok) throw new Error(ra.message);
+      await payments.reportOutcome(a, ra.id, "SCAM");
+      const b = await ownerWithPlan();
+      const rb = await payments.createPayment(b, { payeeName: "Shop", payeeEmail: payee, amount: "25", method: "p2p", note: "" });
+      if (!rb.ok) throw new Error(rb.message);
+      expect((await payments.getPayment(b, rb.id))?.decision?.reasons.map((x) => x.code)).toContain("PAYEE_REPORTED_ONCE");
+      expect(rb.level).not.toBe("HOLD");
+      await payments.reportOutcome(a, ra.id, "NOT_SCAM");
+      expect(await payments.scamReportsFor(b.planId, payee)).toEqual({ otherHouseholds: 0, byOwner: false });
+    });
+
+    it("INV-28 reporting a sent payment as a scam tells the trusted person, in their language, and stores no message text", async () => {
+      riskMode = "pass";
+      const ctx = await ownerWithPlan();
+      const r = await payments.createPayment(ctx, { payeeName: "Mentor", payeeEmail: `m-${randomUUID()}@x.example`, amount: "60", method: "p2p", note: "Guaranteed returns of 30% a month" });
+      if (!r.ok) throw new Error(r.message);
+      if (r.level !== "PASS") await payments.actOnPayment(ctx, r.id, r.level === "REVIEW" ? "confirm" : "send-anyway");
+      await db.db().query(`UPDATE payments SET status = 'SENT' WHERE id = $1`, [r.id]);
+      await payments.reportOutcome(ctx, r.id, "SCAM");
+      const n = await db.db().query(`SELECT kind, subject FROM notifications WHERE plan_id = $1 AND kind = 'CONTACT_SCAM_REPORTED'`, [ctx.planId]);
+      // The contact in these tests hasn't accepted yet, so there may be no one to tell; when there is, it's queued.
+      const contact = await db.db().query(`SELECT 1 FROM memberships WHERE plan_id = $1 AND role = 'TRUSTED_CONTACT' AND revoked_at IS NULL`, [ctx.planId]);
+      expect(n.rowCount).toBe(contact.rowCount);
+      const d = await db.db().query(`SELECT text_labels FROM payment_decisions WHERE payment_id = $1`, [r.id]);
+      expect(d.rows[0].text_labels).toContain("INVESTMENT_PITCH");
+      expect(JSON.stringify(d.rows[0])).not.toMatch(/30%/);
     });
 
     it("rejects malformed amounts and emails before anything is checked", async () => {

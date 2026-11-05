@@ -1,0 +1,31 @@
+{
+  "candidate": "risk-lgbm-70f402efa681",
+  "checks": {
+    "catches_as_many_synthetic_scams": {
+      "candidate": 0.9533,
+      "current": 0.9518,
+      "pass": true
+    },
+    "holds_no_more_normal_payments": {
+      "candidate": 0.0046,
+      "current": 0.0049,
+      "pass": true
+    },
+    "knows_at_least_the_original_words": {
+      "pass": true,
+      "words": [
+        "GIFT_CARD_REQUEST",
+        "CRYPTO_REQUEST",
+        "URGENCY",
+        "IMPERSONATION_GOVERNMENT",
+        "IMPERSONATION_TECH_SUPPORT",
+        "IMPERSONATION_FAMILY"
+      ]
+    },
+    "more_scam_words_never_lower_the_score": {
+      "pass": true
+    }
+  },
+  "current": "risk-lgbm-a2ea68bf996a",
+  "passed": true
+}

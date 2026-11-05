@@ -23,10 +23,11 @@ import shap
 import warnings
 from sklearn.ensemble import IsolationForest
 
-from .features import FEATURE_NAMES, Payment, compute_for_sorted
+from .features import FEATURE_NAMES, TEXT_LABELS, Payment, compute_for_sorted
 from .synth import Dataset, Txn, generate
 
 MODEL_FAMILY = "risk-lgbm"
+REAL_WEIGHT = 5.0
 
 # Feature -> (reason code, plain-language text). Only these can reach a person.
 REASONS: dict[str, tuple[str, str]] = {
@@ -57,14 +58,22 @@ class Artifacts:
     thresholds: Thresholds
     version: str
     metrics: dict[str, Any]
+    # The text labels this model counts. Labels outside it are ignored, never an error.
+    text_labels: tuple[str, ...] = TEXT_LABELS
 
 
-def to_xy(ds: Dataset) -> tuple[np.ndarray, np.ndarray, list[Txn]]:
+def vocabulary_for(ds: Dataset) -> tuple[str, ...]:
+    """The original labels, plus any new label seen on a confirmed real outcome."""
+    seen = {label for t in ds.txns if not t.synthetic for label in t.text_labels}
+    return TEXT_LABELS + tuple(sorted(seen - set(TEXT_LABELS)))
+
+
+def to_xy(ds: Dataset, vocabulary: tuple[str, ...] = TEXT_LABELS) -> tuple[np.ndarray, np.ndarray, list[Txn]]:
     rows = [
         (Payment(t.payee_id, t.amount_minor, t.at, t.hour_local, t.method, t.text_labels), t.owner_id)
         for t in ds.txns
     ]
-    x = np.asarray(compute_for_sorted(rows), dtype=np.float64)
+    x = np.asarray(compute_for_sorted(rows, vocabulary), dtype=np.float64)
     y = np.asarray([1 if t.is_scam else 0 for t in ds.txns], dtype=np.int32)
     return x, y, ds.txns
 
@@ -89,12 +98,13 @@ def train(
     target_false_review: float = 0.03,
 ) -> Artifacts:
     ds = ds or generate(seed=seed)
-    x, y, txns = to_xy(ds)
+    vocabulary = vocabulary_for(ds)
+    x, y, txns = to_xy(ds, vocabulary)
     tr, va, te = _split_by_owner(txns, seed)
     # Grooming payments are scam money but look exactly like normal small payments
     # when they happen. Training on them would teach "small new payee = scam".
     # Excluded from training; reported separately in evaluation.
-    grooming = np.asarray([bool(t.scam_type and t.scam_type.endswith("_grooming")) for t in txns], dtype=bool)
+    grooming = np.asarray([bool(t.scam_type and t.scam_type.endswith("_grooming")) or not t.train_row for t in txns], dtype=bool)
     tr, va = tr[~grooming[tr]], va[~grooming[va]]
 
     params = {
@@ -108,10 +118,15 @@ def train(
         "seed": seed,
         "deterministic": True,
         "verbose": -1,
+        # More scam words can only raise the score, never lower it, whatever the model learns (INV-11).
+        "monotone_constraints": [1 if f == "text_scam_label_count" else 0 for f in FEATURE_NAMES],
+        "monotone_constraints_method": "advanced",
     }
+    # Real, confirmed outcomes count for more than synthetic ones: they are what actually happened.
+    weight = np.asarray([1.0 if t.synthetic else REAL_WEIGHT for t in txns])
     booster = lgb.train(
         params,
-        lgb.Dataset(x[tr], y[tr], feature_name=list(FEATURE_NAMES)),
+        lgb.Dataset(x[tr], y[tr], weight=weight[tr], feature_name=list(FEATURE_NAMES)),
         num_boost_round=300,
         valid_sets=[lgb.Dataset(x[va], y[va], feature_name=list(FEATURE_NAMES))],
         callbacks=[lgb.early_stopping(30, verbose=False)],
@@ -128,9 +143,10 @@ def train(
     anomaly = float(np.quantile(anom_val_normal, 0.995))
     th = Thresholds(review=min(review, hold), hold=hold, anomaly=anomaly)
 
+    te = te[np.asarray([txns[i].train_row for i in te], dtype=bool)]
     metrics = evaluate(booster, iforest, th, x[te], y[te], [txns[i] for i in te])
     version = _version(params, seed, booster)
-    return Artifacts(booster, iforest, th, version, metrics)
+    return Artifacts(booster, iforest, th, version, metrics, vocabulary)
 
 
 def _version(params: dict[str, Any], seed: int, booster: lgb.Booster) -> str:
@@ -237,7 +253,7 @@ def save(art: Artifacts, directory: Path) -> None:
     joblib.dump(art.iforest, directory / "iforest.joblib")
     (directory / "meta.json").write_text(
         json.dumps(
-            {"version": art.version, "thresholds": art.thresholds.__dict__, "metrics": art.metrics},
+            {"version": art.version, "thresholds": art.thresholds.__dict__, "metrics": art.metrics, "text_labels": list(art.text_labels)},
             indent=2,
             sort_keys=True,
         )
@@ -254,4 +270,5 @@ def load(directory: Path) -> Artifacts:
         thresholds=Thresholds(**meta["thresholds"]),
         version=meta["version"],
         metrics=meta["metrics"],
+        text_labels=tuple(meta.get("text_labels", TEXT_LABELS)),
     )

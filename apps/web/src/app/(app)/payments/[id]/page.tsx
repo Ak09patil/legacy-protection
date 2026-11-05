@@ -3,10 +3,10 @@ import { notFound } from "next/navigation";
 import { Heading, Panel, buttonStyles } from "@/components/app/ui";
 import { INTL_LOCALE } from "@/i18n/config";
 import { getI18n } from "@/i18n/server";
-import { getPayment } from "@/server/payments";
+import { getPayment, outcomeOf } from "@/server/payments";
 import { requireRole, snapshot } from "@/server/plans";
 import { TalkItThrough } from "./TalkItThrough";
-import { paymentAction } from "../../actions";
+import { paymentAction, reportOutcomeAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +30,7 @@ export default async function PaymentPage({ params }: { params: Promise<{ id: st
   const p = await getPayment(ctx, id);
   if (!p) notFound();
   const s = await snapshot(ctx.planId);
+  const outcome = await outcomeOf(ctx, p.id);
   const contact = s.contact.status === "JOINED" ? s.contact.name : null;
   const tz = s.confirmed?.document.checkin.timeZone ?? "UTC";
   const fmt = (ms: number) => new Intl.DateTimeFormat(INTL_LOCALE[locale], { weekday: "long", hour: "numeric", minute: "2-digit", timeZone: tz }).format(ms);
@@ -134,6 +135,53 @@ export default async function PaymentPage({ params }: { params: Promise<{ id: st
         </div>
       )}
 
+      {/* What really happened. Asked once a payment is decided; the answer protects her and others (INV-28). */}
+      {outcome === "SCAM" ? (
+        <Panel aria-labelledby="help-h" className="space-y-3">
+          <p role="status" className="text-[18px] font-semibold text-green">
+            {t.outcome.thanksScam}
+          </p>
+          {(p.status === "SENT" || p.status === "RELEASED") && (
+            <>
+              <h2 id="help-h" className="pt-2 text-[18px] font-semibold">
+                {t.outcome.helpTitle}
+              </h2>
+              <p className="text-[18px] leading-[1.6]">{t.outcome.notYourFault}</p>
+              <ol className="list-decimal space-y-2 pl-6 text-[18px] leading-[1.6]">
+                <li>{t.outcome.help1}</li>
+                <li>{t.outcome.help2}</li>
+                <li>{t.outcome.help3}</li>
+              </ol>
+              {contact && <p className="text-[18px] leading-[1.6]">{t.outcome.toldPerson(contact)}</p>}
+            </>
+          )}
+        </Panel>
+      ) : outcome === "NOT_SCAM" ? (
+        <p role="status" className="text-center text-[17px] text-ink-soft">
+          {t.outcome.thanksFine}
+        </p>
+      ) : p.status === "STOPPED_BY_OWNER" ? (
+        <Panel aria-labelledby="ask-h" className="space-y-3">
+          <h2 id="ask-h" className="text-[18px] font-semibold">
+            {t.outcome.askStopped}
+          </h2>
+          <p className="text-[17px] text-ink-soft">{t.outcome.askStoppedLead}</p>
+          <OutcomeButton id={p.id} outcome="SCAM" label={t.outcome.yesScam} variant="soft" />
+          <OutcomeButton id={p.id} outcome="NOT_SCAM" label={t.outcome.noFine} variant="soft" />
+        </Panel>
+      ) : p.status === "SENT" || p.status === "RELEASED" ? (
+        <div className="text-center">
+          <p className="text-[16px] text-ink-soft">{t.outcome.reportSentLead}</p>
+          <form action={reportOutcomeAction}>
+            <input type="hidden" name="id" value={p.id} />
+            <input type="hidden" name="outcome" value="SCAM" />
+            <button type="submit" className={buttonStyles.quiet}>
+              {t.outcome.reportSent}
+            </button>
+          </form>
+        </div>
+      ) : null}
+
       <Panel aria-labelledby="hist-title" className="bg-white/50">
         <h2 id="hist-title" className="text-[18px] font-semibold">{t.payment.history}</h2>
         <ol className="mt-2 space-y-2 text-[17px] text-ink-soft">
@@ -147,3 +195,16 @@ export default async function PaymentPage({ params }: { params: Promise<{ id: st
     </div>
   );
 }
+
+function OutcomeButton({ id, outcome, label, variant }: { id: string; outcome: "SCAM" | "NOT_SCAM"; label: string; variant: keyof typeof buttonStyles }) {
+  return (
+    <form action={reportOutcomeAction}>
+      <input type="hidden" name="id" value={id} />
+      <input type="hidden" name="outcome" value={outcome} />
+      <button type="submit" className={buttonStyles[variant]}>
+        {label}
+      </button>
+    </form>
+  );
+}
+

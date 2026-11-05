@@ -41,23 +41,42 @@ Publicly circulating copies of scraped Venmo transactions. Training a privacy pr
 
 ## Metrics
 
-**Interim results on synthetic data** (`services/risk/reports/metrics.json`, model `risk-lgbm-a2ea68bf996a`). Normal payments are interim synthetic data until the DCPC files are loaded; these numbers will change, and synthetic data flatters any model. Measured on owners the model never saw in training.
+**Interim results on synthetic data** (`services/risk/reports/metrics.json`, model `risk-lgbm-70f402efa681`). Normal payments are interim synthetic data until the DCPC files are loaded; these numbers will change, and synthetic data flatters any model. Measured on owners the model never saw in training.
 
 | Measure | Value |
 |---|---|
-| ROC AUC | 0.988 |
-| Scam payments flagged (review or hold) | 89.0% |
-| Scam payments held | 79.2% |
+| ROC AUC | 0.987 |
+| Scam payments flagged (review or hold) | 89.6% |
+| Scam payments held | 78.0% |
 | Normal payments wrongly held | 0.48% (target 0.5%) |
-| Normal payments sent for review | 3.26% |
-| Flagged by scam type | tech support 100%, investment 99%, government impersonation 95%, family emergency 91%, **romance 64%** |
-| Grooming payments flagged | 0%: small trust-building payments look exactly like normal payments when they happen. Excluded from training and headline figures. |
-| Legitimate new payees wrongly held | 0.12% |
-| Legitimate large payments wrongly held | 2.7% |
+| Normal payments sent for review | 3.29% |
+| Flagged by scam type | tech support 99%, investment 99%, family emergency 93%, government impersonation 93%, **romance 68%** |
+| Grooming payments flagged | 0%: small trust-building payments look exactly like normal payments when they happen. The model doesn't try; the relationship rules (INV-27) watch the whole relationship instead. |
+| Legitimate new payees wrongly held | 0% |
+| Legitimate large payments wrongly held | 3.3% |
 
 Reproduce with `cd services/risk && PYTHONPATH=src python -m risk.train`.
 
 **What these numbers don't show:** performance on real scams. Romance scams are the hardest case, as they are in reality, because the victim pays someone they have come to trust.
+
+## How it gets smarter (INV-28)
+
+The model learns from what really happened, on three time scales, and none of them can make it less protective.
+
+1. **The same day, with no retraining.** When the owner tells us a payment was a scam ("Was it a scam?" after she stops one; "This was a scam" on one that went), that payee is flagged for everyone: one household's report means others are asked, two or more mean the payment is paused. A household counts once, its latest answer counts, a carer someone registered is only ever asked about, and nothing about who reported is shown (INV-13).
+2. **New scam words without breaking anything.** The app labels scam language (now including investment pitches, withdrawal fees and romance, in three languages) and sends every label to the model. The model counts the words it was trained on and ignores the rest, returning them as `ignoredLabels`; a malformed label is still refused. When the model is retrained on real outcomes, words seen on confirmed scams join its vocabulary.
+3. **Retraining on real outcomes, behind a gate.** `pnpm risk:export` writes anonymous outcomes (households and payees as keyed hashes, scam-word labels, never message text; labels only from owners, never payees). `python -m risk.train --real` trains a candidate, weighting real outcomes 5× synthetic ones. `python -m risk.promote` then requires:
+   - every confirmed real scam the current model catches, the candidate catches too;
+   - at least as many synthetic scams caught (within half a point);
+   - no more ordinary payments held (a quarter of a point at most, never over 1%; half a point on real payments people said were fine);
+   - more scam words can never lower the score (a monotonic constraint in training, checked again at the gate);
+   - and a person runs it again with `--approve`. The previous model is kept for a one-command rollback.
+
+On stand-in outcomes in the export format, with a "trading mentor" pattern the synthetic data never contains, the first model caught 0 of 160 held-out scam payments; after retraining, 160 of 160, holding fewer ordinary payments (1.8% → 0%). Stand-in data flatters, like all synthetic data; the point is that the loop learns and the gate holds.
+
+The gate found a real problem on its first run: the model trained before the monotonic constraint could, for some payments, score *lower* when a scam word was added. The current model was retrained with the constraint, passed the gate, and replaced it.
+
+**What learning can't do:** it can't stop a scam nobody reports, so unreported scams stay "matured" normal rows; we only count a sent payment as normal after 60 days without a report. And a scammer can't teach it: payees never give labels.
 
 ## Thresholds
 

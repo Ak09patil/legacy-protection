@@ -10,7 +10,7 @@ import type { Level, Reason, RuleResult } from "./decide.js";
 import { maxLevel } from "./decide.js";
 import { isEscalating, payeeTotalThreshold, spreadThreshold, type RelationshipFacts } from "./relationship.js";
 
-export const RULES_VERSION = "rules-1.1.0";
+export const RULES_VERSION = "rules-1.2.0";
 
 export type TextLabel =
   | "GIFT_CARD_REQUEST"
@@ -26,15 +26,6 @@ export type TextLabel =
   /** Affection from someone the owner pays: "my love", "can't wait to meet you". */
   | "ROMANCE";
 
-/** The labels the risk model was trained on. Newer labels are used by the rules only. */
-export const MODEL_TEXT_LABELS: readonly TextLabel[] = [
-  "GIFT_CARD_REQUEST",
-  "CRYPTO_REQUEST",
-  "URGENCY",
-  "IMPERSONATION_GOVERNMENT",
-  "IMPERSONATION_TECH_SUPPORT",
-  "IMPERSONATION_FAMILY",
-];
 
 export interface PaymentFacts {
   readonly payeeIsNew: boolean;
@@ -46,6 +37,8 @@ export interface PaymentFacts {
   /** This payment's amount, and how it fits the owner's relationship with this payee (INV-27). */
   readonly amountMinor?: number;
   readonly relationship?: RelationshipFacts;
+  /** What people have told us about this payee: other households (counted once each) and the owner herself (INV-28). */
+  readonly scamReports?: { readonly otherHouseholds: number; readonly byOwner: boolean };
 }
 
 interface Rule {
@@ -146,6 +139,26 @@ export const RULES: readonly Rule[] = [
     level: "HOLD",
     text: "A lot of money has gone to several new people in the last month. Scammers often ask you to pay a different account each time.",
     applies: (f) => youngRelationship(f) && !!f.relationship && f.relationship.spreadTotalMinor >= spreadThreshold(f.relationship),
+  },
+  // ---- What people told us: learned the same day, no retraining (INV-28) ----
+  {
+    code: "PAYEE_YOU_REPORTED",
+    level: "HOLD",
+    text: "You told us before that this person scammed you.",
+    applies: (f) => f.scamReports?.byOwner === true,
+  },
+  {
+    code: "PAYEE_REPORTED_BY_OTHERS",
+    level: "HOLD",
+    text: "Other people have told us this person scammed them.",
+    applies: (f) => !f.payeeIsRegisteredCaregiver && (f.scamReports?.otherHouseholds ?? 0) >= 2,
+  },
+  {
+    code: "PAYEE_REPORTED_ONCE",
+    level: "REVIEW",
+    text: "Someone else has told us this person may have scammed them.",
+    // One report only asks, and a carer you registered is only ever asked about: one person can't get someone blocked.
+    applies: (f) => (f.scamReports?.otherHouseholds ?? 0) === 1 || (f.payeeIsRegisteredCaregiver && (f.scamReports?.otherHouseholds ?? 0) >= 2),
   },
   {
     code: "CAREGIVER_OVER_CAP",

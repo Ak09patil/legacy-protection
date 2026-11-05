@@ -105,10 +105,24 @@ def test_INV10_missing_model_answers_503(tmp_path: Path, monkeypatch: pytest.Mon
     assert r.status_code == 503
 
 
-def test_rejects_unknown_labels_and_methods(client: TestClient) -> None:
+def test_rejects_malformed_input_but_ignores_words_it_hasnt_learned(client: TestClient) -> None:
     base = {"payeeId": "x", "amountMinor": 100, "currency": "USD", "at": NOW.isoformat(), "hourLocal": 10, "history": []}
     assert client.post("/v1/score", json={**base, "method": "wire_to_moon", "textLabels": []}).status_code == 422
-    assert client.post("/v1/score", json={**base, "method": "p2p", "textLabels": ["TRUSTED"]}).status_code == 422
+    for bad in ["trusted", "A", "X" * 41, "ROMANCE; DROP TABLE", ""]:
+        assert client.post("/v1/score", json={**base, "method": "p2p", "textLabels": [bad]}).status_code == 422
+    r = client.post("/v1/score", json={**base, "method": "p2p", "textLabels": ["ROMANCE", "URGENCY"]})
+    assert r.status_code == 200
+    assert r.json()["ignoredLabels"] == ["ROMANCE"]
+
+
+def test_INV11_no_label_can_ever_lower_the_score(client: TestClient) -> None:
+    """Whatever words are added, known or not, the probability never goes down."""
+    for amount, method in [(2_000, "p2p"), (90_000, "gift_card"), (450_000, "bank_transfer"), (15_000, "crypto")]:
+        base = {"payeeId": "new_person", "amountMinor": amount, "currency": "USD", "at": NOW.isoformat(), "hourLocal": 14, "history": HISTORY, "method": method}
+        probs = []
+        for labels in [[], ["TRUSTED_LOOKING"], ["URGENCY"], ["URGENCY", "GIFT_CARD_REQUEST"], ["URGENCY", "GIFT_CARD_REQUEST", "IMPERSONATION_GOVERNMENT"]]:
+            probs.append(client.post("/v1/score", json={**base, "textLabels": labels}).json()["probability"])
+        assert probs == sorted(probs), (amount, method, probs)
 
 
 def test_INV13_network_endpoint_reasons_describe_the_payee_only(client: TestClient) -> None:

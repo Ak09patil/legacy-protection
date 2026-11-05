@@ -14,9 +14,11 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from typing import Annotated
 
-from .features import METHODS, TEXT_LABELS, PastPayment, Payment, compute
+from pydantic import BaseModel, Field, StringConstraints
+
+from .features import METHODS, PastPayment, Payment, compute
 from .model import Explainer, load
 from .scenarios import build as build_network_demo
 from .sentinel import Level as NetLevel, assess
@@ -50,7 +52,9 @@ class ScoreRequest(BaseModel):
     at: datetime
     hourLocal: int = Field(ge=0, le=23)
     method: Literal["p2p", "bank_transfer", "gift_card", "crypto"]
-    textLabels: list[Literal[TEXT_LABELS]] = Field(default_factory=list, max_length=6)  # type: ignore[valid-type]
+    # Any well-formed label is accepted. The model counts the ones it was trained on and
+    # ignores the rest, so the app can learn new scam words before the model does.
+    textLabels: list[Annotated[str, StringConstraints(pattern=r"^[A-Z][A-Z_]{2,39}$")]] = Field(default_factory=list, max_length=16)
     history: list[PastPaymentIn] = Field(default_factory=list, max_length=5000)
 
 
@@ -67,6 +71,8 @@ class Signal(BaseModel):
     reasons: list[Reason]
     networkOnly: bool
     modelVersion: str
+    ignoredLabels: list[str] = Field(default_factory=list)
+    probability: float | None = None
 
 
 @app.get("/healthz")
@@ -86,8 +92,10 @@ def score(req: ScoreRequest) -> Signal:
         tuple(req.textLabels),
     )
     hist = [PastPayment(h.payeeId, h.amountMinor, int(h.at.timestamp())) for h in req.history]
-    out = explainer().score(compute(p, hist))
-    return Signal.model_validate({**out, "networkOnly": False})
+    ex = explainer()
+    out = ex.score(compute(p, hist, ex.art.text_labels))
+    ignored = sorted(set(req.textLabels) - set(ex.art.text_labels))
+    return Signal.model_validate({**out, "networkOnly": False, "ignoredLabels": ignored})
 
 
 class NetworkRequest(BaseModel):

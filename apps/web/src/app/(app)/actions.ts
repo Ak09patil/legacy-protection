@@ -8,7 +8,7 @@ import { tx } from "@/server/db";
 import { pokeTimeline } from "@/server/timeline";
 import { suggestCarers, talkAboutPayment } from "@/server/ai";
 import type { ChatMessage } from "@lp/ai";
-import { actOnPayment, createPayment, type PaymentAction } from "@/server/payments";
+import { actOnPayment, createPayment, reportOutcome, type PaymentAction } from "@/server/payments";
 import { applyEvent, checkIn, confirmPlan, inviteExecutor, reissueInvite, requireRole, saveDraft } from "@/server/plans";
 import { PlanDocumentSchema, summarisePlan } from "@lp/policy";
 import { translateError } from "@/i18n/errors";
@@ -154,3 +154,14 @@ export async function talkAboutPaymentAction(paymentId: string, conversation: Ch
   const ctx = await requireRole("OWNER");
   return talkAboutPayment(ctx, paymentId, conversation, await getLocale());
 }
+
+/** "Was it a scam?" Only the owner can answer, for her own payments (INV-28). */
+export async function reportOutcomeAction(formData: FormData): Promise<void> {
+  const ctx = await requireRole("OWNER");
+  const id = String(formData.get("id") ?? "");
+  const outcome = String(formData.get("outcome") ?? "");
+  if (outcome !== "SCAM" && outcome !== "NOT_SCAM") throw new Error("Unknown outcome");
+  await reportOutcome(ctx, id, outcome);
+  revalidatePath(`/payments/${id}`);
+}
+

@@ -157,6 +157,7 @@ export const en = {
       PAYMENT_ASK_CONTACT: "You asked to talk it over with your trusted person.",
       PAYMENT_SEND_ANYWAY: "You chose to send it. It waits 24 hours first.",
       PAYMENT_CANCEL_RELEASE: "You changed your mind. It won’t be sent.",
+      PAYMENT_OUTCOME_REPORTED: "You told us what really happened. Thank you.",
       PAYMENT_RELEASED: "Sent.",
     } as Record<string, string>,
     talk: {
@@ -169,6 +170,24 @@ export const en = {
       off: "The helper isn’t switched on here yet.",
       down: "The helper can’t answer right now. You can still decide below, or talk to someone you trust.",
     },
+  },
+
+  outcome: {
+    askStopped: "Was it a scam?",
+    askStoppedLead: "Your answer helps us protect you, and other people, next time.",
+    yesScam: "Yes, it was a scam",
+    noFine: "No, it was fine",
+    reportSent: "This was a scam",
+    reportSentLead: "If you’ve realised this payment was a scam, tell us. It’s not your fault.",
+    thanksScam: "Thank you for telling us. We won’t let money go to this person again without stopping you first, and we’ll warn other people.",
+    thanksFine: "Thank you. That helps us ask you less often.",
+    helpTitle: "What to do now",
+    notYourFault: "It’s not your fault. These scams fool careful people every day.",
+    help1: "Tell PayPal straight away. Use the PayPal app, or the phone number on paypal.com. Never use a number from the scammer’s message.",
+    help2: "Stop talking to the person. Don’t send more money, even if someone promises to get your money back. That is often the same scam.",
+    help3: "Report it to the police. In the US you can also report it to the FBI at ic3.gov.",
+    toldPerson: (person: string) => `We’ve told ${person}, so you don’t have to deal with this alone.`,
+    changeAnswer: "Change my answer",
   },
 
   reasons: {
@@ -201,6 +220,9 @@ export const en = {
     RECENT_PAYEE_LARGE_TOTAL: "A lot of money has now gone to someone you started paying recently. It is more than you usually spend in a month.",
     RECENT_PAYEE_LARGE_TOTAL_BILL: "A lot of money has now gone to someone you started paying recently. It looks like a regular bill. Please check that it is.",
     NEW_PAYEES_SPREAD: "A lot of money has gone to several new people this month. Scammers often ask you to pay a different account each time.",
+    PAYEE_YOU_REPORTED: "You told us before that this person scammed you.",
+    PAYEE_REPORTED_BY_OTHERS: "Other people have told us this person scammed them.",
+    PAYEE_REPORTED_ONCE: "Someone else has told us this person may have scammed them.",
     TEXT_CHECK_UNAVAILABLE: "We couldn’t finish reading their message, so please check this payment is right.",
   } as Record<string, string>,
 

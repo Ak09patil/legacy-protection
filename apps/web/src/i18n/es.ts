@@ -149,6 +149,7 @@ export const es: Messages = {
       PAYMENT_ASK_CONTACT: "Usted pidió hablarlo con su persona de confianza.",
       PAYMENT_SEND_ANYWAY: "Usted decidió enviarlo. Primero espera 24 horas.",
       PAYMENT_CANCEL_RELEASE: "Usted cambió de idea. No se enviará.",
+      PAYMENT_OUTCOME_REPORTED: "Nos dijo lo que pasó de verdad. Gracias.",
       PAYMENT_RELEASED: "Enviado.",
     },
     talk: {
@@ -161,6 +162,24 @@ export const es: Messages = {
       off: "La ayuda todavía no está activada aquí.",
       down: "La ayuda no puede responder ahora. Puede decidir abajo de todos modos, o hablar con alguien de confianza.",
     },
+  },
+
+  outcome: {
+    askStopped: "¿Era una estafa?",
+    askStoppedLead: "Su respuesta nos ayuda a protegerle a usted, y a otras personas, la próxima vez.",
+    yesScam: "Sí, era una estafa",
+    noFine: "No, estaba bien",
+    reportSent: "Esto fue una estafa",
+    reportSentLead: "Si se ha dado cuenta de que este pago fue una estafa, díganoslo. No es culpa suya.",
+    thanksScam: "Gracias por decírnoslo. No dejaremos que salga más dinero hacia esta persona sin pararle antes, y avisaremos a otras personas.",
+    thanksFine: "Gracias. Así tendremos que preguntarle menos.",
+    helpTitle: "Qué hacer ahora",
+    notYourFault: "No es culpa suya. Estas estafas engañan cada día a personas prudentes.",
+    help1: "Avise a PayPal enseguida. Use la aplicación de PayPal o el teléfono de paypal.com. Nunca un número del mensaje del estafador.",
+    help2: "Deje de hablar con esa persona. No envíe más dinero, aunque alguien prometa recuperar su dinero. Suele ser la misma estafa.",
+    help3: "Denuncie la estafa ante la Policía Nacional o la Guardia Civil.",
+    toldPerson: (person) => `Se lo hemos dicho a ${person}, para que no tenga que pasar por esto solo.`,
+    changeAnswer: "Cambiar mi respuesta",
   },
 
   reasons: {
@@ -193,6 +212,9 @@ export const es: Messages = {
     RECENT_PAYEE_LARGE_TOTAL: "Ya ha ido mucho dinero a alguien a quien empezó a pagar hace poco. Es más de lo que suele gastar en un mes.",
     RECENT_PAYEE_LARGE_TOTAL_BILL: "Ya ha ido mucho dinero a alguien a quien empezó a pagar hace poco. Parece una factura habitual. Por favor, compruebe que lo es.",
     NEW_PAYEES_SPREAD: "Este mes ha ido mucho dinero a varias personas nuevas. Los estafadores suelen pedirle que pague a una cuenta distinta cada vez.",
+    PAYEE_YOU_REPORTED: "Usted ya nos dijo que esta persona le estafó.",
+    PAYEE_REPORTED_BY_OTHERS: "Otras personas nos han dicho que esta persona les estafó.",
+    PAYEE_REPORTED_ONCE: "Otra persona nos ha dicho que esta persona quizá le estafó.",
     TEXT_CHECK_UNAVAILABLE: "No pudimos terminar de leer su mensaje. Por favor, compruebe que este pago es correcto.",
   },
 

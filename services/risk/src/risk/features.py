@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from statistics import median
 
 METHODS = ("p2p", "bank_transfer", "gift_card", "crypto")
+# The words the first model was trained on. Each trained model stores its own
+# vocabulary (meta.json); retraining on real outcomes can add to it.
 TEXT_LABELS = (
     "GIFT_CARD_REQUEST",
     "CRYPTO_REQUEST",
@@ -50,7 +52,7 @@ class Payment:
     text_labels: tuple[str, ...]
 
 
-def compute(p: Payment, history: list[PastPayment]) -> list[float]:
+def compute(p: Payment, history: list[PastPayment], vocabulary: tuple[str, ...] = TEXT_LABELS) -> list[float]:
     prior = [h for h in history if h.at < p.at]
     amounts = [h.amount_minor for h in prior]
     typical = median(amounts) if amounts else None
@@ -66,17 +68,17 @@ def compute(p: Payment, history: list[PastPayment]) -> list[float]:
         ((last_72h_sum + p.amount_minor) / typical) if typical else 1.0,
         float(p.hour_local),
         float(METHODS.index(p.method)) if p.method in METHODS else -1.0,
-        float(sum(1 for label in p.text_labels if label in TEXT_LABELS)),
+        float(sum(1 for label in p.text_labels if label in vocabulary)),
     ]
 
 
-def compute_for_sorted(rows: list[tuple[Payment, str]]) -> list[list[float]]:
+def compute_for_sorted(rows: list[tuple[Payment, str]], vocabulary: tuple[str, ...] = TEXT_LABELS) -> list[list[float]]:
     """Features for many payments, where rows are (payment, owner_id) sorted by owner then time."""
     out: list[list[float]] = []
     history: dict[str, list[PastPayment]] = {}
     for p, owner in rows:
         h = history.setdefault(owner, [])
-        out.append(compute(p, h))
+        out.append(compute(p, h, vocabulary))
         h.append(PastPayment(p.payee_id, p.amount_minor, p.at))
     return out
 

@@ -36,6 +36,7 @@ interface Templates {
   inviteContact: (owner: string) => Email;
   inviteExecutor: (owner: string) => Email;
   signInCode: (code: string) => Email;
+  scamReported: (owner: string, amount: string) => Email;
 }
 
 const en: Templates = {
@@ -64,6 +65,10 @@ const en: Templates = {
   inviteExecutor: (n) => [
     `${n} has chosen you to handle their affairs`,
     `If ${n}’s plan ever starts, you’ll get a clear record of what happened to their PayPal account. Until then, you can’t see anything.\n\nSay yes within 7 days: {{link}}`,
+  ],
+  scamReported: (n, a) => [
+    `${n} has been scammed`,
+    `${n} told us that a payment of ${a} was a scam. Please call ${n} today. It's not their fault: these scams fool careful people every day.\n\nThey should tell PayPal straight away, using the PayPal app or the number on paypal.com, never a number from the scammer. They shouldn't send any more money, even if someone promises to get it back.`,
   ],
   signInCode: (c) => [`Your Legacy Protection code: ${c}`, `Your code is ${c}. It works once, for 10 minutes.\n\nIf you didn’t ask for this, you can ignore this email. Nobody can use it without your email inbox.`],
 };
@@ -95,6 +100,10 @@ const de: Templates = {
     `${n} hat Sie gewählt, um sich um den Nachlass zu kümmern`,
     `Wenn der Plan von ${n} einmal startet, bekommen Sie einen klaren Bericht darüber, was mit dem PayPal-Konto passiert ist. Bis dahin sehen Sie nichts.\n\nSagen Sie innerhalb von 7 Tagen zu: {{link}}`,
   ],
+  scamReported: (n, a) => [
+    `${n} wurde betrogen`,
+    `${n} hat uns gesagt, dass eine Zahlung von ${a} Betrug war. Bitte rufen Sie ${n} heute an. Es ist nicht die Schuld von ${n}: Diese Betrüger täuschen jeden Tag auch vorsichtige Menschen.\n\n${n} sollte es sofort PayPal sagen, über die PayPal-App oder die Nummer auf paypal.com, nie über eine Nummer vom Betrüger. Bitte kein weiteres Geld schicken, auch wenn jemand verspricht, es zurückzuholen.`,
+  ],
   signInCode: (c) => [`Ihr Legacy-Protection-Code: ${c}`, `Ihr Code ist ${c}. Er gilt einmal und 10 Minuten lang.\n\nWenn Sie das nicht angefordert haben, können Sie diese E-Mail ignorieren. Ohne Ihr E-Mail-Postfach kann niemand den Code benutzen.`],
 };
 
@@ -124,6 +133,10 @@ const es: Templates = {
   inviteExecutor: (n) => [
     `${n} le ha elegido para ocuparse de sus asuntos`,
     `Si el plan de ${n} empieza algún día, recibirá un informe claro de lo que pasó con su cuenta de PayPal. Hasta entonces, no podrá ver nada.\n\nDiga que sí antes de 7 días: {{link}}`,
+  ],
+  scamReported: (n, a) => [
+    `${n} ha sufrido una estafa`,
+    `${n} nos ha dicho que un pago de ${a} fue una estafa. Llame hoy a ${n}, por favor. No es culpa suya: estas estafas engañan cada día a personas prudentes.\n\n${n} debe avisar a PayPal enseguida, desde la aplicación de PayPal o el número de paypal.com, nunca un número del estafador. No debe enviar más dinero, aunque alguien prometa recuperarlo.`,
   ],
   signInCode: (c) => [`Su código de Legacy Protection: ${c}`, `Su código es ${c}. Sirve una sola vez, durante 10 minutos.\n\nSi no lo ha pedido, puede ignorar este correo. Nadie puede usarlo sin su bandeja de entrada.`],
 };

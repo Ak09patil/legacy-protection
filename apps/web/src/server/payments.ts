@@ -11,7 +11,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { appendEvent } from "@lp/db/audit";
-import { decide, evaluateRules, keywordLabels, MODEL_TEXT_LABELS, relationshipFacts, RULES_VERSION, type ModelOutcome, type Reason, type TextLabel } from "@lp/policy";
+import { decide, evaluateRules, keywordLabels, relationshipFacts, RULES_VERSION, type ModelOutcome, type Reason, type TextLabel } from "@lp/policy";
 import { z } from "zod";
 import { db, tx } from "./db";
 import { applyEvent, outbox, snapshot, type Ctx } from "./plans";
@@ -229,9 +229,10 @@ export async function createPayment(ctx: Ctx, input: unknown): Promise<CreateRes
     withinRegisteredObligationCap: carer ? paidToCarer + p.amountMinor <= carer.maxPerMonthMinor && p.amountMinor <= carer.amountPerPaymentMinor : true,
     amountMinor: p.amountMinor,
     relationship: relationshipFacts(history, waiting, p.payeeEmail, p.amountMinor, now),
+    scamReports: await scamReportsFor(ctx.planId, p.payeeEmail),
   };
   const hourLocal = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone: tz }).format(now)) % 24;
-  const assessed = await assessPayment({ payeeId: p.payeeEmail, amountMinor: p.amountMinor, at: now, hourLocal, method: p.method, textLabels: labels.filter((l) => MODEL_TEXT_LABELS.includes(l)), history });
+  const assessed = await assessPayment({ payeeId: p.payeeEmail, amountMinor: p.amountMinor, at: now, hourLocal, method: p.method, textLabels: labels, history });
   const model: ModelOutcome =
     textCheckUnavailable && assessed.status === "OK"
       ? {
@@ -265,9 +266,9 @@ export async function createPayment(ctx: Ctx, input: unknown): Promise<CreateRes
       [id, ctx.planId, p.payeeName, p.payeeEmail, p.amountMinor, p.method, sealedNote, status, now],
     );
     await c.query(
-      `INSERT INTO payment_decisions (payment_id, level, reasons, policy_version, model_version, model_status, decided_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [id, decision.level, JSON.stringify(decision.reasons), decision.policyVersion, decision.modelVersions.join(",") || null, model.status, now],
+      `INSERT INTO payment_decisions (payment_id, level, reasons, policy_version, model_version, model_status, decided_at, text_labels, hour_local)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [id, decision.level, JSON.stringify(decision.reasons), decision.policyVersion, decision.modelVersions.join(",") || null, model.status, now, labels, hourLocal],
     );
     await appendEvent(c, {
       planId: ctx.planId,
@@ -289,3 +290,77 @@ export async function createPayment(ctx: Ctx, input: unknown): Promise<CreateRes
   });
   return { ok: true, id, level: decision.level };
 }
+
+// ---------------------------------------------------------------------------
+// What really happened: people tell us, and protection learns (INV-28)
+// ---------------------------------------------------------------------------
+
+/**
+ * Reports about this payee. Each other household counts once, whatever it
+ * says how many times, and only its latest answer counts. Nothing about who
+ * reported is returned (INV-13).
+ */
+export async function scamReportsFor(planId: string, payeeEmail: string): Promise<{ otherHouseholds: number; byOwner: boolean }> {
+  const r = await db().query<{ others: string; mine: boolean }>(
+    `WITH latest AS (
+       SELECT DISTINCT ON (payment_id) plan_id, outcome FROM payment_outcomes
+        WHERE lower(payee_email) = lower($1) ORDER BY payment_id, at DESC
+     ), per_household AS (
+       SELECT plan_id, bool_or(outcome = 'SCAM') AS scam FROM latest GROUP BY plan_id
+     )
+     SELECT count(*) FILTER (WHERE scam AND plan_id <> $2) AS others,
+            coalesce(bool_or(scam) FILTER (WHERE plan_id = $2), false) AS mine
+       FROM per_household`,
+    [payeeEmail, planId],
+  );
+  return { otherHouseholds: Number(r.rows[0]?.others ?? 0), byOwner: r.rows[0]?.mine ?? false };
+}
+
+export type Outcome = "SCAM" | "NOT_SCAM";
+
+/** The owner says what really happened to one of her payments. If money was lost, her trusted person is told. */
+export async function reportOutcome(ctx: Ctx, paymentId: string, outcome: Outcome): Promise<{ ok: boolean; message?: string }> {
+  if (ctx.role !== "OWNER") return { ok: false, message: "Only the account owner can decide about a payment." };
+  if (outcome !== "SCAM" && outcome !== "NOT_SCAM") return { ok: false, message: "That choice isn’t available any more." };
+  return tx(async (c) => {
+    const r = await c.query<{ payee_email: string; status: PaymentStatus; amount_minor: string }>(
+      `SELECT payee_email, status, amount_minor FROM payments WHERE id = $1 AND plan_id = $2`,
+      [paymentId, ctx.planId],
+    );
+    const p = r.rows[0];
+    if (!p) return { ok: false, message: "Payment not found." };
+    await c.query(`INSERT INTO payment_outcomes (payment_id, plan_id, payee_email, outcome, reported_by, role) VALUES ($1, $2, $3, $4, $5, 'OWNER')`, [
+      paymentId,
+      ctx.planId,
+      p.payee_email,
+      outcome,
+      ctx.user.id,
+    ]);
+    await appendEvent(c, { planId: ctx.planId, at: new Date(), kind: "PAYMENT_OUTCOME_REPORTED", actor: ctx.user.id, payload: { paymentId, outcome } });
+    const moneyLeft = p.status === "SENT" || p.status === "RELEASED";
+    if (outcome === "SCAM" && moneyLeft) {
+      const k = await c.query<{ id: string; email: string; locale: string }>(
+        `SELECT u.id, u.email, u.locale FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.plan_id = $1 AND m.role = 'TRUSTED_CONTACT' AND m.revoked_at IS NULL`,
+        [ctx.planId],
+      );
+      const contact = k.rows[0];
+      if (contact) {
+        const lang = emailLocale(contact.locale);
+        const first = ctx.user.name.split(" ")[0] ?? ctx.user.name;
+        const [subject, body] = EMAILS[lang].scamReported(first, emailMoney(lang, p.amount_minor));
+        await outbox(c, ctx.planId, contact.id, contact.email, "CONTACT_SCAM_REPORTED", subject, body);
+      }
+    }
+    return { ok: true };
+  });
+}
+
+/** The latest thing the owner told us about a payment, if anything. */
+export async function outcomeOf(ctx: Ctx, paymentId: string): Promise<Outcome | null> {
+  const r = await db().query<{ outcome: Outcome }>(
+    `SELECT outcome FROM payment_outcomes WHERE payment_id = $1 AND plan_id = $2 ORDER BY at DESC, id DESC LIMIT 1`,
+    [paymentId, ctx.planId],
+  );
+  return r.rows[0]?.outcome ?? null;
+}
+

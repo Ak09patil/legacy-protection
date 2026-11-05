@@ -39,6 +39,8 @@ class Txn:
     scam_type: str | None = None
     hard_negative: str | None = None
     synthetic: bool = True
+    # False for payments kept only as history (recent, outcome not known yet): never trained or scored on.
+    train_row: bool = True
 
 
 @dataclass

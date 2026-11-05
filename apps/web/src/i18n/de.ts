@@ -149,6 +149,7 @@ export const de: Messages = {
       PAYMENT_ASK_CONTACT: "Sie wollten es mit Ihrer Vertrauensperson besprechen.",
       PAYMENT_SEND_ANYWAY: "Sie haben entschieden, sie zu senden. Sie wartet zuerst 24 Stunden.",
       PAYMENT_CANCEL_RELEASE: "Sie haben es sich anders überlegt. Sie wird nicht gesendet.",
+      PAYMENT_OUTCOME_REPORTED: "Sie haben uns gesagt, was wirklich passiert ist. Danke.",
       PAYMENT_RELEASED: "Gesendet.",
     },
     talk: {
@@ -161,6 +162,24 @@ export const de: Messages = {
       off: "Die Hilfe ist hier noch nicht eingeschaltet.",
       down: "Die Hilfe kann gerade nicht antworten. Sie können unten trotzdem entscheiden oder mit jemandem sprechen, dem Sie vertrauen.",
     },
+  },
+
+  outcome: {
+    askStopped: "War es Betrug?",
+    askStoppedLead: "Ihre Antwort hilft uns, Sie und andere Menschen beim nächsten Mal zu schützen.",
+    yesScam: "Ja, es war Betrug",
+    noFine: "Nein, es war in Ordnung",
+    reportSent: "Das war Betrug",
+    reportSentLead: "Wenn Sie gemerkt haben, dass diese Zahlung Betrug war, sagen Sie es uns. Es ist nicht Ihre Schuld.",
+    thanksScam: "Danke, dass Sie es uns sagen. Wir lassen kein Geld mehr an diese Person gehen, ohne Sie vorher zu stoppen, und wir warnen andere Menschen.",
+    thanksFine: "Danke. So müssen wir Sie seltener fragen.",
+    helpTitle: "Was Sie jetzt tun können",
+    notYourFault: "Es ist nicht Ihre Schuld. Diese Betrüger täuschen jeden Tag auch vorsichtige Menschen.",
+    help1: "Sagen Sie es sofort PayPal. Nutzen Sie die PayPal-App oder die Telefonnummer auf paypal.com. Nie eine Nummer aus der Nachricht des Betrügers.",
+    help2: "Sprechen Sie nicht mehr mit der Person. Schicken Sie kein weiteres Geld, auch wenn jemand verspricht, Ihr Geld zurückzuholen. Das ist oft derselbe Betrug.",
+    help3: "Zeigen Sie den Betrug bei der Polizei an. Das geht auch online bei der Onlinewache Ihres Bundeslandes.",
+    toldPerson: (person) => `Wir haben ${person} Bescheid gesagt, damit Sie damit nicht allein sind.`,
+    changeAnswer: "Meine Antwort ändern",
   },
 
   reasons: {
@@ -193,6 +212,9 @@ export const de: Messages = {
     RECENT_PAYEE_LARGE_TOTAL: "An jemanden, den Sie erst seit Kurzem bezahlen, ist jetzt viel Geld gegangen. Es ist mehr, als Sie sonst in einem Monat ausgeben.",
     RECENT_PAYEE_LARGE_TOTAL_BILL: "An jemanden, den Sie erst seit Kurzem bezahlen, ist jetzt viel Geld gegangen. Es sieht nach einer regelmäßigen Rechnung aus. Bitte prüfen Sie das.",
     NEW_PAYEES_SPREAD: "Diesen Monat ist viel Geld an mehrere neue Menschen gegangen. Betrüger lassen Sie oft jedes Mal an ein anderes Konto zahlen.",
+    PAYEE_YOU_REPORTED: "Sie haben uns schon gesagt, dass diese Person Sie betrogen hat.",
+    PAYEE_REPORTED_BY_OTHERS: "Andere Menschen haben uns gesagt, dass diese Person sie betrogen hat.",
+    PAYEE_REPORTED_ONCE: "Jemand anderes hat uns gesagt, dass diese Person ihn vielleicht betrogen hat.",
     TEXT_CHECK_UNAVAILABLE: "Wir konnten die Nachricht nicht fertig lesen. Bitte prüfen Sie, ob diese Zahlung richtig ist.",
   },
 
