@@ -5,7 +5,7 @@ import { Client, Connection } from "@temporalio/client";
 import { NativeConnection, Worker } from "@temporalio/worker";
 import pg from "pg";
 import { appDatabaseUrl } from "@lp/db/url";
-import { configureVault, deliverDue, mailerFromEnv } from "@lp/service";
+import { configureVault, deliverDue, mailerFromEnv, sendDuePayments, senderFromEnv } from "@lp/service";
 import { httpVault } from "@lp/vault";
 import { createActivities, executorFromEnv } from "./activities.js";
 
@@ -36,6 +36,7 @@ async function main() {
   const running = worker.run();
   await reconcile(pool);
   deliverForever(pool);
+  sendForever(pool);
   await running;
 }
 
@@ -85,3 +86,23 @@ function deliverForever(pool: pg.Pool) {
   };
   void tick();
 }
+
+/**
+ * Every 10 seconds: releases "send anyway" payments whose 24-hour wait has
+ * ended, and retries sends that PayPal didn't accept the first time (INV-29).
+ */
+function sendForever(pool: pg.Pool) {
+  const sender = senderFromEnv();
+  console.log(`Payment sending on (${sender.name})`);
+  const tick = async () => {
+    try {
+      const r = await sendDuePayments(pool, sender);
+      if (r.sent || r.failed) console.log(`[send] sent ${r.sent}, failed ${r.failed}`);
+    } catch (e) {
+      console.error(`[send] ${e instanceof Error ? e.message : e}`);
+    }
+    setTimeout(tick, 10_000).unref();
+  };
+  void tick();
+}
+

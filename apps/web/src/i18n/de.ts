@@ -91,6 +91,7 @@ export const de: Messages = {
     statusPaused: "Angehalten",
     statusTalking: "Wird besprochen",
     statusSoon: "Wird bald gesendet",
+    statusSending: "Wird gesendet…",
     statusNotSent: "Nicht gesendet",
   },
 
@@ -111,6 +112,11 @@ export const de: Messages = {
     whatSaidHelp: "Die Worte helfen uns, Betrug zu erkennen. Wir nutzen sie nur für diese Prüfung und bewahren sie sicher verschlossen auf.",
     checkAndSend: "Prüfen und senden",
     checkingIt: "Wird geprüft…",
+
+    sendingNow: "Wird gerade über PayPal gesendet. Das dauert meist nur ein paar Sekunden.",
+    sentRef: (ref) => `Über PayPal gesendet. PayPal-Referenz: ${ref}`,
+    failedTitle: "Diese Zahlung wurde nicht gesendet",
+    failedLead: "PayPal hat sie nicht angenommen. Es ist kein Geld abgegangen. Bitte prüfen Sie die PayPal-E-Mail-Adresse und versuchen Sie es noch einmal.",
 
     justChecking: "Nur zur Sicherheit",
     confirmedByYou: "Sie haben gesagt, sie ist richtig",
@@ -150,6 +156,8 @@ export const de: Messages = {
       PAYMENT_SEND_ANYWAY: "Sie haben entschieden, sie zu senden. Sie wartet zuerst 24 Stunden.",
       PAYMENT_CANCEL_RELEASE: "Sie haben es sich anders überlegt. Sie wird nicht gesendet.",
       PAYMENT_OUTCOME_REPORTED: "Sie haben uns gesagt, was wirklich passiert ist. Danke.",
+      PAYMENT_SENT: "Über PayPal gesendet.",
+      PAYMENT_FAILED: "PayPal hat sie nicht angenommen. Es ist kein Geld abgegangen.",
       PAYMENT_RELEASED: "Gesendet.",
     },
     talk: {

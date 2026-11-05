@@ -99,6 +99,7 @@ export const en = {
     statusPaused: "Paused",
     statusTalking: "Talking it over",
     statusSoon: "Sending soon",
+    statusSending: "Sending…",
     statusNotSent: "Not sent",
   },
 
@@ -119,6 +120,11 @@ export const en = {
     whatSaidHelp: "Their words help us spot scams. We only use them to check this payment, and we keep them locked away.",
     checkAndSend: "Check and send",
     checkingIt: "Checking it…",
+
+    sendingNow: "Sending it through PayPal now. This usually takes a few seconds.",
+    sentRef: (ref: string) => `Sent through PayPal. PayPal reference: ${ref}`,
+    failedTitle: "This payment wasn’t sent",
+    failedLead: "PayPal didn’t accept it, so no money left your account. Please check their PayPal email and try again.",
 
     justChecking: "Just checking",
     confirmedByYou: "You said it was right",
@@ -158,6 +164,8 @@ export const en = {
       PAYMENT_SEND_ANYWAY: "You chose to send it. It waits 24 hours first.",
       PAYMENT_CANCEL_RELEASE: "You changed your mind. It won’t be sent.",
       PAYMENT_OUTCOME_REPORTED: "You told us what really happened. Thank you.",
+      PAYMENT_SENT: "Sent through PayPal.",
+      PAYMENT_FAILED: "PayPal didn’t accept it. No money left your account.",
       PAYMENT_RELEASED: "Sent.",
     } as Record<string, string>,
     talk: {

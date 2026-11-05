@@ -209,6 +209,12 @@ Owners can tell us what really happened to a payment. A payee reported by other 
 - **Enforced in:** `apps/web/src/server/payments.ts` (`reportOutcome`, `scamReportsFor`), `packages/policy/src/rules.ts` (PAYEE_* rules), `services/risk/src/risk/api.py` (tolerant vocabulary), `services/risk/src/risk/model.py` (monotonic constraint, per-model vocabulary), `services/risk/src/risk/promote.py` (the gate), `apps/web/scripts/export-outcomes.mts`.
 - **Verified by:** `INV-28 when people report a payee as a scammer, the next person is protected the same day`, `INV-28 one household alone can only make others be asked, and changing their answer takes it back`, `INV-28 reporting a sent payment as a scam tells the trusted person, in their language, and stores no message text`, `INV-28 real outcomes teach a pattern the model never saw`, `INV-28 the gate refuses a model that catches less`, `INV-28 the gate refuses a model that holds ordinary payments`, `INV-28 promotion keeps the old model for rollback`, `INV11 no label can ever lower the score`.
 
+### INV-29 — Money moves through PayPal only after an allowed decision, and only once
+A payment reaches PayPal only from SENDING (it passed the check, or the owner said "yes, it's right") or from RELEASE_SCHEDULED once its full 24-hour wait is over. A paused payment, one the owner stopped, or one still waiting for her answer is never sent. The app sends at once; the worker retries failures with a growing wait and releases scheduled payments. Each row is claimed with SKIP LOCKED, and PayPal-Request-Id and sender_batch_id are derived from our payment id, so any retry, crash or second worker returns the first result instead of paying twice. If PayPal refuses, the payment is marked failed and the owner is told plainly that no money left her account. What the payee wrote is never sent along with the money.
+
+- **Enforced in:** `packages/service/src/sending.ts`, `packages/paypal/src/api.ts` (`sendOwnerPayment`), `apps/web/src/server/payments.ts`, `workers/executor/src/worker.ts`.
+- **Verified by:** `INV-29 the same payment sent any number of times, through any network failure, pays once`, `INV-29 money really moves, and only when it should` (passes and sends with a reference; paused, stopped and unanswered never sent; 'send anyway' waits the full 24 hours; two workers at once; retries and refusals), and `pnpm paypal:smoke` step 5 against the live sandbox.
+
 ---
 
 ## Change log
@@ -224,3 +230,4 @@ Owners can tell us what really happened to a payment. A payee reported by other 
 | 2026-11-05 | Added INV-26 (one-tap "I'm okay" from email). The outbox is now delivered by the worker, with retries, and secret links are erased after sending. | — |
 | 2026-11-05 | Added INV-27 (slow scams: escalation, totals, spread across accounts, withdrawal-fee and romance language). Rules 1.1.0. Found that new text labels would have made the risk service refuse requests; the model now only receives the labels it knows. | — |
 | 2026-11-05 | Added INV-28 (learning from real outcomes, behind a promotion gate). The gate found the previous model could score lower with more scam words; retrained with a monotonic constraint (`risk-lgbm-70f402efa681`). | — |
+| 2026-11-05 | Added INV-29. "Send money" now really pays through PayPal (it had only recorded the decision), and "send anyway" payments are released after their wait (nothing had released them). | — |

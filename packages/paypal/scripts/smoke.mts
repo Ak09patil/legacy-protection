@@ -14,7 +14,7 @@ import { PayPalAgentToolkit } from "@paypal/agent-toolkit/openai";
 import { money } from "@lp/core";
 import { authorize, type Authority, type PlannedStep } from "@lp/guard";
 import { planExecution, PlanDocumentSchema } from "@lp/policy";
-import { cancelInvoice, payCaregiver, PayPalClient, PayPalError } from "@lp/paypal";
+import { cancelInvoice, payCaregiver, PayPalClient, PayPalError, sendOwnerPayment } from "@lp/paypal";
 
 const id = process.env.PAYPAL_CLIENT_ID?.trim();
 const secret = process.env.PAYPAL_CLIENT_SECRET?.trim();
@@ -190,6 +190,33 @@ if (pay.allow && pay.kind === "write" && pay.step.type === "PAY_OBLIGATION") {
   } catch (e) {
     no(`payout to Maria: ${why(e)}`);
     if (e instanceof PayPalError && e.issue === "PAYOUT_NOT_AVAILABLE") console.log("    Payouts aren't available on this sandbox account's country. Use a US sandbox business account.");
+    failures++;
+  }
+}
+
+console.log("\n5. \"Send money\": a payment that passed its check goes through PayPal, once");
+{
+  const paymentId = randomUUID();
+  const send = () => sendOwnerPayment(client, { paymentId, receiverEmail: maria!, amount: money(150n, "USD") });
+  try {
+    const first = await send();
+    ok(`sent $1.50 to ${maria}: payout batch ${first.batch_header.payout_batch_id} (${first.batch_header.batch_status})`);
+    try {
+      const second = await send();
+      if (second.batch_header.payout_batch_id === first.batch_header.payout_batch_id) ok("sending the same payment again returned the same batch: paid once");
+      else {
+        no(`sending again created a second batch ${second.batch_header.payout_batch_id}`);
+        failures++;
+      }
+    } catch (e) {
+      if (e instanceof PayPalError && (e.status === 400 || e.status === 409 || e.status === 422)) ok(`sending the same payment again was refused by PayPal (${e.issue ?? e.status}): paid once`);
+      else {
+        no(`repeat send: ${why(e)}`);
+        failures++;
+      }
+    }
+  } catch (e) {
+    no(`send money: ${why(e)}`);
     failures++;
   }
 }

@@ -15,7 +15,7 @@ import { decide, evaluateRules, keywordLabels, relationshipFacts, RULES_VERSION,
 import { z } from "zod";
 import { db, tx } from "./db";
 import { applyEvent, outbox, snapshot, type Ctx } from "./plans";
-import { EMAILS, emailLocale, emailMoney } from "@lp/service";
+import { EMAILS, emailLocale, emailMoney, sendDuePayments, senderFromEnv, type PaymentSender } from "@lp/service";
 import { assessPayment } from "./risk";
 import { webVault } from "./vault";
 
@@ -23,7 +23,7 @@ export const POLICY_VERSION = `policy-1.0.0+${RULES_VERSION}`;
 
 export const RELEASE_COOLING_OFF_MS = 24 * 3_600_000;
 
-export type PaymentStatus = "CONFIRM_NEEDED" | "PAUSED" | "STOPPED_BY_OWNER" | "WAITING_FOR_CONTACT" | "RELEASE_SCHEDULED" | "SENT" | "RELEASED" | "FAILED";
+export type PaymentStatus = "CONFIRM_NEEDED" | "PAUSED" | "STOPPED_BY_OWNER" | "WAITING_FOR_CONTACT" | "RELEASE_SCHEDULED" | "SENDING" | "SENT" | "RELEASED" | "FAILED";
 export type PaymentAction = "confirm" | "stop" | "ask-contact" | "send-anyway" | "cancel-release";
 
 export interface PaymentView {
@@ -34,6 +34,8 @@ export interface PaymentView {
   note: string;
   status: PaymentStatus;
   releaseAt: number | null;
+  /** PayPal's reference once the money has gone (a payout batch id), or a dry-run marker in development. */
+  paypalRef: string | null;
   createdAt: number;
   decision: { level: "PASS" | "REVIEW" | "HOLD"; reasons: Reason[]; policyVersion: string } | null;
   history: Array<{ at: number; kind: string }>;
@@ -42,8 +44,8 @@ export interface PaymentView {
 export async function getPayment(ctx: Ctx, id: string, purpose: "owner_view" | "ai_helper" = "owner_view"): Promise<PaymentView | null> {
   if (!/^[0-9a-f-]{36}$/.test(id)) return null;
   const p = await db().query<{
-    id: string; payee_name: string; amount_minor: string; currency: string; note: string; status: PaymentStatus; release_at: Date | null; created_at: Date;
-  }>(`SELECT id, payee_name, amount_minor, currency, note, status, release_at, created_at FROM payments WHERE id = $1 AND plan_id = $2`, [id, ctx.planId]);
+    id: string; payee_name: string; amount_minor: string; currency: string; note: string; status: PaymentStatus; release_at: Date | null; created_at: Date; paypal_ref: string | null;
+  }>(`SELECT id, payee_name, amount_minor, currency, note, status, release_at, created_at, paypal_ref FROM payments WHERE id = $1 AND plan_id = $2`, [id, ctx.planId]);
   const row = p.rows[0];
   if (!row) return null;
   const [d, h] = await Promise.all([
@@ -65,6 +67,7 @@ export async function getPayment(ctx: Ctx, id: string, purpose: "owner_view" | "
     note: row.note ? await webVault().openField(ctx.planId, "payment_note", row.note, purpose) : "",
     status: row.status,
     releaseAt: row.release_at?.getTime() ?? null,
+    paypalRef: row.paypal_ref,
     createdAt: row.created_at.getTime(),
     decision: dec ? { level: dec.level, reasons: dec.reasons, policyVersion: dec.policy_version } : null,
     history: h.rows.map((x) => ({ at: x.at.getTime(), kind: x.kind })),
@@ -81,6 +84,13 @@ const ALLOWED_FROM: Record<PaymentAction, PaymentStatus[]> = {
 
 export async function actOnPayment(ctx: Ctx, id: string, action: PaymentAction): Promise<{ ok: boolean; message?: string }> {
   if (ctx.role !== "OWNER") return { ok: false, message: "Only the account owner can decide about a payment." };
+  const r = await decideOnPayment(ctx, id, action);
+  // "Yes, it's right": the money goes now, not on the worker's next round.
+  if (r.ok && action === "confirm") await sendNow(id);
+  return r;
+}
+
+async function decideOnPayment(ctx: Ctx, id: string, action: PaymentAction): Promise<{ ok: boolean; message?: string }> {
   return tx(async (c) => {
     const r = await c.query<{ status: PaymentStatus; payee_name: string; amount_minor: string }>(
       `SELECT status, payee_name, amount_minor FROM payments WHERE id = $1 AND plan_id = $2 FOR UPDATE`,
@@ -92,7 +102,7 @@ export async function actOnPayment(ctx: Ctx, id: string, action: PaymentAction):
 
     const now = new Date();
     const next: Record<PaymentAction, PaymentStatus> = {
-      confirm: "SENT",
+      confirm: "SENDING",
       stop: "STOPPED_BY_OWNER",
       "ask-contact": "WAITING_FOR_CONTACT",
       "send-anyway": "RELEASE_SCHEDULED",
@@ -179,7 +189,7 @@ export async function createPayment(ctx: Ctx, input: unknown): Promise<CreateRes
   const history = hist.rows.map((h) => ({ payeeId: h.payee_email, amountMinor: Number(h.amount_minor), at: h.created_at }));
   // Payments not sent yet but not stopped either: they count towards totals, so queueing several at once can't slip under (INV-27).
   const pend = await db().query<{ payee_email: string; amount_minor: string; created_at: Date }>(
-    `SELECT payee_email, amount_minor, created_at FROM payments WHERE plan_id = $1 AND status IN ('CONFIRM_NEEDED', 'PAUSED', 'WAITING_FOR_CONTACT', 'RELEASE_SCHEDULED')`,
+    `SELECT payee_email, amount_minor, created_at FROM payments WHERE plan_id = $1 AND status IN ('CONFIRM_NEEDED', 'PAUSED', 'WAITING_FOR_CONTACT', 'RELEASE_SCHEDULED', 'SENDING')`,
     [ctx.planId],
   );
   const waiting = pend.rows.map((h) => ({ payeeId: h.payee_email, amountMinor: Number(h.amount_minor), at: h.created_at }));
@@ -258,7 +268,7 @@ export async function createPayment(ctx: Ctx, input: unknown): Promise<CreateRes
   const id = randomUUID();
   // What the payee wrote is sealed before it's stored (INV-24).
   const sealedNote = p.note ? await webVault().sealField(ctx.planId, "payment_note", p.note, "owner_view") : "";
-  const status: PaymentStatus = decision.level === "PASS" ? "SENT" : decision.level === "REVIEW" ? "CONFIRM_NEEDED" : "PAUSED";
+  const status: PaymentStatus = decision.level === "PASS" ? "SENDING" : decision.level === "REVIEW" ? "CONFIRM_NEEDED" : "PAUSED";
   await tx(async (c) => {
     await c.query(
       `INSERT INTO payments (id, plan_id, payee_name, payee_email, amount_minor, currency, method, note, status, created_at)
@@ -288,7 +298,28 @@ export async function createPayment(ctx: Ctx, input: unknown): Promise<CreateRes
     // Making a payment is a sign the owner is well (INV-07).
     await applyEvent(c, ctx.planId, { type: "OWNER_ACTIVITY", at: now.getTime() }, ctx.user.id, { channel: "payment" });
   });
+  if (status === "SENDING") await sendNow(id);
   return { ok: true, id, level: decision.level };
+}
+
+// ---------------------------------------------------------------------------
+// Moving the money through PayPal (INV-29)
+// ---------------------------------------------------------------------------
+
+const g = globalThis as unknown as { __lpSender?: PaymentSender };
+const sender = () => (g.__lpSender ??= senderFromEnv());
+
+/**
+ * Sends one approved payment now. If PayPal is slow or down, the payment
+ * stays "sending" and the worker retries it; the person is never left with an
+ * error page, and a retry can't pay twice.
+ */
+async function sendNow(paymentId: string): Promise<void> {
+  try {
+    await sendDuePayments(db(), sender(), new Date(), { onlyPaymentId: paymentId, batch: 1 });
+  } catch (e) {
+    console.error(`[send] ${paymentId}: ${e instanceof Error ? e.message : e}`);
+  }
 }
 
 // ---------------------------------------------------------------------------

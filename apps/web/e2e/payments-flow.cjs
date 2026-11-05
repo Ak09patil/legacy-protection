@@ -37,6 +37,11 @@ const B = process.env.E2E_ORIGIN ?? 'http://localhost:3000';
     await p.waitForTimeout(500);
     if (shot) await p.screenshot({ path: `${require('os').tmpdir()}/lp-e2e-pay-${shot}.png`, fullPage: true });
     console.log(`${name} $${amount}:`, (await p.locator('h1').textContent()).trim());
+    // A payment that went: wait for PayPal's confirmation to appear on its own (the page refreshes while sending).
+    if ((await p.getByText(/Sending it through PayPal/).count()) || (await p.getByTestId('paypal-ref').count())) {
+      await p.getByTestId('paypal-ref').waitFor({ timeout: 20000 });
+      console.log('   ', (await p.getByTestId('paypal-ref').textContent()).trim());
+    }
   };
   await pay('Riverside Pharmacy', 'pharmacy@example.com', '42.10', 'p2p', '', 'normal');
   await pay('Maria', 'maria@example.com', '320', 'p2p', 'Thanks for this week', null);

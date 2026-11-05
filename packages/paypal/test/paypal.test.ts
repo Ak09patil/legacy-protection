@@ -7,6 +7,7 @@ import {
   listTransactions,
   payCaregiver,
   PayPalClient,
+  sendOwnerPayment,
   PayPalError,
   ProductionEndpointError,
   searchWindows,
@@ -221,3 +222,46 @@ describe("webhooks", () => {
     expect(await verifyWebhook(mk(f), "WH-1", h, "not json")).toBe(false);
   });
 });
+
+describe("owner payments", () => {
+  const pay = { paymentId: "3f1c2a7e-9b4d-4c1e-8a2b-1234567890ab", receiverEmail: "pharmacy@example.com", amount: money(4_210, "USD") };
+
+  it("INV-29 the same payment sent any number of times, through any network failure, pays once", async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.array(fc.constantFrom("LOSE_RESPONSE", "FAIL_BEFORE", "HTTP_503" as const), { maxLength: 3 }), fc.integer({ min: 1, max: 4 }), async (failures, runs) => {
+        const f = new FakePayPal();
+        f.failures = [...failures];
+        const client = mk(f, { maxAttempts: 4 });
+        for (let i = 0; i < runs; i++) {
+          try {
+            await sendOwnerPayment(client, pay);
+          } catch {
+            /* the worker retries later */
+          }
+        }
+        expect(f.effects).toBeLessThanOrEqual(1);
+        expect(new Set(f.seenRequestIds)).toEqual(new Set(f.seenRequestIds.length ? [`lp-pay-${pay.paymentId}`] : []));
+      }),
+    );
+  });
+
+  it("never sends what the payee wrote to the owner along with the money", async () => {
+    let body = "";
+    const client = new PayPalClient({
+      clientId: "id",
+      clientSecret: "secret",
+      sleep: noSleep,
+      fetch: async (url, init) => {
+        if (new URL(url).pathname === "/v1/oauth2/token") return json(200, { access_token: "t", expires_in: 3600 });
+        body = String(init.body);
+        return json(201, { batch_header: { payout_batch_id: "B1", batch_status: "PENDING", sender_batch_header: { sender_batch_id: "x" } } });
+      },
+    });
+    await sendOwnerPayment(client, pay);
+    const sent = JSON.parse(body);
+    expect(sent.items[0]).toMatchObject({ receiver: "pharmacy@example.com", amount: { value: "42.10", currency: "USD" } });
+    expect(sent.sender_batch_header.sender_batch_id).toHaveLength(30);
+    expect(body).toContain("Sent with Legacy Protection.");
+  });
+});
+

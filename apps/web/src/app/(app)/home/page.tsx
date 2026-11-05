@@ -151,6 +151,8 @@ function StatusPill({ status, t }: { status: string; t: Messages }) {
       return <Pill tone="paused">{t.home.statusTalking}</Pill>;
     case "RELEASE_SCHEDULED":
       return <Pill tone="paused">{t.home.statusSoon}</Pill>;
+    case "SENDING":
+      return <Pill tone="neutral">{t.home.statusSending}</Pill>;
     default:
       return <Pill tone="neutral">{t.home.statusNotSent}</Pill>;
   }

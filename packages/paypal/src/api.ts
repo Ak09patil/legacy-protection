@@ -47,6 +47,41 @@ export async function payCaregiver(client: PayPalClient, p: CaregiverPayout): Pr
   });
 }
 
+// ---------- Payouts: a payment the owner made, after its check ----------
+
+export interface OwnerPayment {
+  /** Our payment id. PayPal-Request-Id and sender_batch_id both derive from it, so a retry can never pay twice. */
+  readonly paymentId: string;
+  readonly receiverEmail: string;
+  readonly amount: Money;
+}
+
+export async function sendOwnerPayment(client: PayPalClient, p: OwnerPayment): Promise<PayoutBatchResult> {
+  const key = `lp-pay-${p.paymentId}`;
+  return client.request<PayoutBatchResult>({
+    method: "POST",
+    path: "/v1/payments/payouts",
+    idempotencyKey: key,
+    body: {
+      sender_batch_header: {
+        sender_batch_id: `p${p.paymentId.replace(/-/g, "")}`.slice(0, 30),
+        email_subject: "You have a payment",
+        // Never the payee's own message: what a scammer wrote doesn't travel with the money.
+        email_message: "Sent with Legacy Protection.",
+      },
+      items: [
+        {
+          recipient_type: "EMAIL",
+          receiver: p.receiverEmail,
+          amount: { value: toDecimal(p.amount), currency: p.amount.currency },
+          note: "Sent with Legacy Protection.",
+          sender_item_id: p.paymentId,
+        },
+      ],
+    },
+  });
+}
+
 // ---------- Invoicing: cancelling open invoices ----------
 
 export async function cancelInvoice(

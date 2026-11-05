@@ -37,6 +37,7 @@ interface Templates {
   inviteExecutor: (owner: string) => Email;
   signInCode: (code: string) => Email;
   scamReported: (owner: string, amount: string) => Email;
+  paymentFailed: (payee: string, amount: string) => Email;
 }
 
 const en: Templates = {
@@ -70,6 +71,7 @@ const en: Templates = {
     `${n} has been scammed`,
     `${n} told us that a payment of ${a} was a scam. Please call ${n} today. It's not their fault: these scams fool careful people every day.\n\nThey should tell PayPal straight away, using the PayPal app or the number on paypal.com, never a number from the scammer. They shouldn't send any more money, even if someone promises to get it back.`,
   ],
+  paymentFailed: (p, a) => [`Your payment to ${p} wasn’t sent`, `We couldn’t send ${a} to ${p} through PayPal. No money left your account.\n\nYou can try again in Legacy Protection. If it keeps happening, please check their PayPal email address.`],
   signInCode: (c) => [`Your Legacy Protection code: ${c}`, `Your code is ${c}. It works once, for 10 minutes.\n\nIf you didn’t ask for this, you can ignore this email. Nobody can use it without your email inbox.`],
 };
 
@@ -104,6 +106,7 @@ const de: Templates = {
     `${n} wurde betrogen`,
     `${n} hat uns gesagt, dass eine Zahlung von ${a} Betrug war. Bitte rufen Sie ${n} heute an. Es ist nicht die Schuld von ${n}: Diese Betrüger täuschen jeden Tag auch vorsichtige Menschen.\n\n${n} sollte es sofort PayPal sagen, über die PayPal-App oder die Nummer auf paypal.com, nie über eine Nummer vom Betrüger. Bitte kein weiteres Geld schicken, auch wenn jemand verspricht, es zurückzuholen.`,
   ],
+  paymentFailed: (p, a) => [`Ihre Zahlung an ${p} wurde nicht gesendet`, `Wir konnten ${a} nicht über PayPal an ${p} senden. Es ist kein Geld abgegangen.\n\nSie können es in Legacy Protection noch einmal versuchen. Wenn es wieder passiert, prüfen Sie bitte die PayPal-E-Mail-Adresse.`],
   signInCode: (c) => [`Ihr Legacy-Protection-Code: ${c}`, `Ihr Code ist ${c}. Er gilt einmal und 10 Minuten lang.\n\nWenn Sie das nicht angefordert haben, können Sie diese E-Mail ignorieren. Ohne Ihr E-Mail-Postfach kann niemand den Code benutzen.`],
 };
 
@@ -138,6 +141,7 @@ const es: Templates = {
     `${n} ha sufrido una estafa`,
     `${n} nos ha dicho que un pago de ${a} fue una estafa. Llame hoy a ${n}, por favor. No es culpa suya: estas estafas engañan cada día a personas prudentes.\n\n${n} debe avisar a PayPal enseguida, desde la aplicación de PayPal o el número de paypal.com, nunca un número del estafador. No debe enviar más dinero, aunque alguien prometa recuperarlo.`,
   ],
+  paymentFailed: (p, a) => [`Su pago a ${p} no se envió`, `No pudimos enviar ${a} a ${p} por PayPal. No ha salido dinero de su cuenta.\n\nPuede intentarlo otra vez en Legacy Protection. Si vuelve a pasar, compruebe su correo de PayPal.`],
   signInCode: (c) => [`Su código de Legacy Protection: ${c}`, `Su código es ${c}. Sirve una sola vez, durante 10 minutos.\n\nSi no lo ha pedido, puede ignorar este correo. Nadie puede usarlo sin su bandeja de entrada.`],
 };
 

@@ -91,6 +91,7 @@ export const es: Messages = {
     statusPaused: "Parado",
     statusTalking: "Hablándolo",
     statusSoon: "Se enviará pronto",
+    statusSending: "Enviando…",
     statusNotSent: "No enviado",
   },
 
@@ -111,6 +112,11 @@ export const es: Messages = {
     whatSaidHelp: "Sus palabras nos ayudan a detectar estafas. Solo las usamos para revisar este pago y las guardamos bajo llave.",
     checkAndSend: "Revisar y enviar",
     checkingIt: "Revisando…",
+
+    sendingNow: "Se está enviando por PayPal. Suele tardar unos segundos.",
+    sentRef: (ref) => `Enviado por PayPal. Referencia de PayPal: ${ref}`,
+    failedTitle: "Este pago no se envió",
+    failedLead: "PayPal no lo aceptó, así que no ha salido dinero de su cuenta. Compruebe su correo de PayPal e inténtelo de nuevo.",
 
     justChecking: "Solo para asegurarnos",
     confirmedByYou: "Usted dijo que era correcto",
@@ -150,6 +156,8 @@ export const es: Messages = {
       PAYMENT_SEND_ANYWAY: "Usted decidió enviarlo. Primero espera 24 horas.",
       PAYMENT_CANCEL_RELEASE: "Usted cambió de idea. No se enviará.",
       PAYMENT_OUTCOME_REPORTED: "Nos dijo lo que pasó de verdad. Gracias.",
+      PAYMENT_SENT: "Enviado por PayPal.",
+      PAYMENT_FAILED: "PayPal no lo aceptó. No ha salido dinero de su cuenta.",
       PAYMENT_RELEASED: "Enviado.",
     },
     talk: {

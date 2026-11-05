@@ -6,6 +6,7 @@ import { getI18n } from "@/i18n/server";
 import { getPayment, outcomeOf } from "@/server/payments";
 import { requireRole, snapshot } from "@/server/plans";
 import { TalkItThrough } from "./TalkItThrough";
+import { RefreshWhileSending } from "./RefreshWhileSending";
 import { paymentAction, reportOutcomeAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
@@ -44,7 +45,12 @@ export default async function PaymentPage({ params }: { params: Promise<{ id: st
         ← {t.common.backHome}
       </Link>
 
-      {p.status === "CONFIRM_NEEDED" || (p.decision?.level === "REVIEW" && p.status === "SENT") ? (
+      {p.status === "FAILED" ? (
+        <div>
+          <Heading className="text-[clamp(1.9rem,6vw,2.4rem)]">{t.payment.failedTitle}</Heading>
+          <p className="mt-2 text-[18px] text-ink-soft">{t.payment.failedLead}</p>
+        </div>
+      ) : p.status === "CONFIRM_NEEDED" || (p.decision?.level === "REVIEW" && (p.status === "SENT" || p.status === "SENDING")) ? (
         <div>
           <span className="inline-flex items-center gap-2 rounded-full bg-[#FCEFD9] px-4 py-1.5 text-[14px] font-semibold text-amber-ink">
             <span className="h-2 w-2 rounded-full bg-amber" aria-hidden="true" />
@@ -80,6 +86,17 @@ export default async function PaymentPage({ params }: { params: Promise<{ id: st
           {t.payment.toPayee(p.payeeName)}
           {payeeIsNew && <span className="text-ink-soft">{t.payment.newPayeeNote}</span>}
         </p>
+        {p.status === "SENDING" && (
+          <p role="status" className="mt-3 text-[17px] text-ink-soft">
+            {t.payment.sendingNow}
+            <RefreshWhileSending />
+          </p>
+        )}
+        {(p.status === "SENT" || p.status === "RELEASED") && p.paypalRef && (
+          <p className="mt-3 text-[16px] text-ink-soft" data-testid="paypal-ref">
+            {t.payment.sentRef(p.paypalRef)}
+          </p>
+        )}
         {p.note && (
           <p className="mt-4 rounded-2xl bg-mist px-4 py-3 text-[17px] italic text-ink-soft">{t.payment.theirNote(p.note)}</p>
         )}

@@ -482,6 +482,115 @@ suite("web server", () => {
       expect(JSON.stringify(d.rows[0])).not.toMatch(/30%/);
     });
 
+    describe("INV-29 money really moves, and only when it should", () => {
+      const statusOf = async (id: string) =>
+        (await db.db().query<{ status: string; paypal_ref: string | null; send_attempts: number }>(`SELECT status, paypal_ref, send_attempts FROM payments WHERE id = $1`, [id])).rows[0]!;
+      const recorder = () => {
+        const calls: string[] = [];
+        return { calls, sender: { name: "test", send: async (p: { paymentId: string }) => (calls.push(p.paymentId), { reference: `REF-${p.paymentId.slice(0, 6)}` }) } };
+      };
+
+      it("a payment that passes goes through PayPal at once, with its reference", async () => {
+        const ctx = await ownerWithPlan();
+        riskMode = "pass";
+        // An established payee, so nothing is asked.
+        for (let i = 0; i < 12; i++) {
+          await db.db().query(
+            `INSERT INTO payments (id, plan_id, payee_name, payee_email, amount_minor, currency, method, note, status, created_at) VALUES ($1, $2, 'Pharmacy', 'rx@example.com', 4200, 'USD', 'p2p', '', 'SENT', now() - ($3 || ' days')::interval)`,
+            [randomUUID(), ctx.planId, String(10 + i * 7)],
+          );
+        }
+        const r = await payments.createPayment(ctx, { payeeName: "Pharmacy", payeeEmail: "rx@example.com", amount: "42", method: "p2p", note: "" });
+        expect(r).toMatchObject({ ok: true, level: "PASS" });
+        if (!r.ok) return;
+        const row = await statusOf(r.id);
+        expect(row.status).toBe("SENT");
+        expect(row.paypal_ref).toMatch(/^DRYRUN-/); // no PayPal keys in tests: a dry run, clearly marked
+        expect((await payments.getPayment(ctx, r.id))?.history.map((h) => h.kind)).toContain("PAYMENT_SENT");
+      });
+
+      it("'yes, it's right' sends it; a paused, stopped or unanswered payment is never sent", async () => {
+        const { sendDuePayments } = await import("@lp/service");
+        const ctx = await ownerWithPlan();
+        riskMode = "pass";
+        const asked = await payments.createPayment(ctx, { payeeName: "New friend", payeeEmail: `s-${randomUUID()}@x.example`, amount: "30", method: "p2p", note: "My darling, I love you" });
+        riskMode = "hold";
+        const paused = await payments.createPayment(ctx, scam);
+        const stopped = await payments.createPayment(ctx, { ...scam, payeeEmail: `d-${randomUUID()}@x.example` });
+        if (!asked.ok || !paused.ok || !stopped.ok) throw new Error("create failed");
+        expect(asked.level).toBe("REVIEW");
+        await payments.actOnPayment(ctx, stopped.id, "stop");
+        const { calls, sender } = recorder();
+        await sendDuePayments(db.db(), sender, new Date(Date.now() + 365 * 86_400_000));
+        expect(calls).not.toContain(asked.id);
+        expect(calls).not.toContain(paused.id);
+        expect(calls).not.toContain(stopped.id);
+        await payments.actOnPayment(ctx, asked.id, "confirm");
+        expect((await statusOf(asked.id)).status).toBe("SENT");
+      });
+
+      it("'send anyway' waits the full 24 hours, then goes; stopping it in time means it never goes", async () => {
+        const { sendDuePayments } = await import("@lp/service");
+        const ctx = await ownerWithPlan();
+        riskMode = "hold";
+        const a = await payments.createPayment(ctx, scam);
+        const b = await payments.createPayment(ctx, { ...scam, payeeEmail: `b-${randomUUID()}@x.example` });
+        if (!a.ok || !b.ok) throw new Error("create failed");
+        await payments.actOnPayment(ctx, a.id, "send-anyway");
+        await payments.actOnPayment(ctx, b.id, "send-anyway");
+        await payments.actOnPayment(ctx, b.id, "cancel-release");
+        const { calls, sender } = recorder();
+        await sendDuePayments(db.db(), sender, new Date(Date.now() + 23.9 * 3_600_000));
+        expect(calls).not.toContain(a.id);
+        await sendDuePayments(db.db(), sender, new Date(Date.now() + 24.1 * 3_600_000));
+        expect(calls).toContain(a.id);
+        expect(calls).not.toContain(b.id);
+        expect((await statusOf(a.id)).status).toBe("RELEASED");
+      });
+
+      it("two workers at once still send each payment once", async () => {
+        const { sendDuePayments } = await import("@lp/service");
+        const ctx = await ownerWithPlan();
+        const ids: string[] = Array.from({ length: 6 }, () => randomUUID());
+        for (const id of ids) {
+          await db.db().query(
+            `INSERT INTO payments (id, plan_id, payee_name, payee_email, amount_minor, currency, method, note, status, created_at) VALUES ($1, $2, 'P', 'p@x.example', 100, 'USD', 'p2p', '', 'SENDING', now())`,
+            [id, ctx.planId],
+          );
+        }
+        const calls: string[] = [];
+        const slow = { name: "slow", send: async (p: { paymentId: string }) => (calls.push(p.paymentId), await new Promise((r) => setTimeout(r, 20)), { reference: "R" }) };
+        await Promise.all([sendDuePayments(db.db(), slow), sendDuePayments(db.db(), slow), sendDuePayments(db.db(), slow)]);
+        const mine = calls.filter((c) => ids.includes(c));
+        expect(mine.sort()).toEqual([...ids].sort());
+      });
+
+      it("PayPal trouble: retried with a growing wait; a refusal fails at once and she's told no money left", async () => {
+        const { sendDuePayments } = await import("@lp/service");
+        const { PayPalError } = await import("@lp/paypal");
+        const ctx = await ownerWithPlan();
+        const flaky = randomUUID();
+        const refused = randomUUID();
+        for (const id of [flaky, refused]) {
+          await db.db().query(
+            `INSERT INTO payments (id, plan_id, payee_name, payee_email, amount_minor, currency, method, note, status, created_at) VALUES ($1, $2, 'Shop', 'p@x.example', 2500, 'USD', 'p2p', '', 'SENDING', now())`,
+            [id, ctx.planId],
+          );
+        }
+        const down = { name: "down", send: async () => Promise.reject(new Error("timeout")) };
+        await sendDuePayments(db.db(), down, new Date(), { onlyPaymentId: flaky });
+        expect(await statusOf(flaky)).toMatchObject({ status: "SENDING", send_attempts: 1 });
+        // Not tried again before its wait is up.
+        await sendDuePayments(db.db(), down, new Date(), { onlyPaymentId: flaky });
+        expect((await statusOf(flaky)).send_attempts).toBe(1);
+        const no = { name: "no", send: async () => Promise.reject(new PayPalError("refused", 422, null, "RECEIVER_UNREGISTERED")) };
+        await sendDuePayments(db.db(), no, new Date(), { onlyPaymentId: refused });
+        expect((await statusOf(refused)).status).toBe("FAILED");
+        const n = await db.db().query(`SELECT 1 FROM notifications WHERE plan_id = $1 AND kind = 'OWNER_PAYMENT_FAILED'`, [ctx.planId]);
+        expect(n.rowCount).toBe(1);
+      });
+    });
+
     it("rejects malformed amounts and emails before anything is checked", async () => {
       const ctx = await ownerWithPlan();
       for (const bad of [{ ...scam, amount: "-5" }, { ...scam, amount: "1e9" }, { ...scam, amount: "12.345" }, { ...scam, payeeEmail: "not-an-email" }]) {
